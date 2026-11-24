@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Amatsukiyora</title><link rel="stylesheet" href="style.css"></head>
 <body><main><header><h1>AMATSUKIYORA</h1><span id="status" role="status">Подключение…</span></header>
-<section class="map-panel"><div class="map-heading"><div><h2>Граф связей</h2><small>Маршруты знаний · реальные связи</small></div><button id="metro-reset">1:1</button></div><svg id="metro" viewBox="-500 -500 1000 1000" aria-label="Граф связей"></svg><div id="legend" class="legend"></div><p id="graph-status" role="status"></p></section>
-<section class="map-panel"><div class="map-heading"><div><h2>Мозг</h2><small>Радиальная карта памяти</small></div><button id="reset">1:1</button></div><svg id="brain" viewBox="-500 -500 1000 1000" aria-label="Карта памяти"></svg></section>
+<section class="map-panel"><div class="map-heading"><div><h2>Граф связей</h2><small>Маршруты знаний · реальные связи</small></div><button id="metro-reset">1:1</button></div><div class="map-viewport"><svg id="metro" viewBox="-500 -500 1000 1000" aria-label="Граф связей"></svg></div><div id="legend" class="legend"></div><p id="graph-status" role="status"></p></section>
+<section class="map-panel"><div class="map-heading"><div><h2>Мозг</h2><small>Радиальная карта памяти</small></div><button id="reset">1:1</button></div><div class="map-viewport"><svg id="brain" viewBox="-500 -500 1000 1000" aria-label="Карта памяти"></svg></div></section>
 </main>
 <script type="module" src="metro.js"></script><script type="module" src="brain.js"></script></body></html>
