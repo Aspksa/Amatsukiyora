@@ -1,7 +1,7 @@
 <!doctype html>
-<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Amatsukiyora</title><link rel="stylesheet" href="style.css"></head>
-<body><main><header><h1>AMATSUKIYORA</h1><span id="status" role="status">Подключение…</span></header>
-<section class="map-panel"><div class="map-heading"><div><h2>Граф связей</h2><small>Маршруты знаний · реальные связи</small></div><button id="metro-reset">1:1</button></div><div class="map-viewport"><svg id="metro" viewBox="-500 -500 1000 1000" aria-label="Граф связей"></svg></div><div id="legend" class="legend"></div><p id="graph-status" role="status"></p></section>
-<section class="map-panel"><div class="map-heading"><div><h2>Мозг</h2><small>Радиальная карта памяти</small></div><button id="reset">1:1</button></div><div class="map-viewport"><svg id="brain" viewBox="-500 -500 1000 1000" aria-label="Карта памяти"></svg></div></section>
-</main>
-<script type="module" src="metro.js"></script><script type="module" src="brain.js"></script></body></html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Amatsukiyora · Cognitive Universe</title><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="universe.css"></head>
+<body><main class="universe"><header><h1>AMATSUKIYORA</h1><span id="status" role="status">Подключение…</span></header>
+<section class="universe-panel"><div class="universe-toolbar"><div><h2>Cognitive Universe</h2><small>Память · связи · документы · рост</small></div><div class="controls"><button data-mode="all" aria-pressed="true">Всё</button><button data-mode="memory" aria-pressed="false">Память</button><button data-mode="links" aria-pressed="false">Связи</button><button data-mode="documents" aria-pressed="false">Документы</button><button data-mode="stats" aria-pressed="false">Статистика</button><button id="refresh">Обновить</button><button id="reset">1:1</button></div></div>
+<div class="universe-viewport"><svg id="universe" viewBox="-560 -560 1120 1120" aria-label="Единая карта знаний и документов"></svg></div>
+<div id="legend" class="legend"></div><div class="navigation"><button id="back" hidden>Общий вид</button><button id="prev" hidden>Назад</button><button id="next" hidden>Далее</button><span id="detail" role="status"></span></div></section>
+</main><script type="module" src="universe.js"></script></body></html>
