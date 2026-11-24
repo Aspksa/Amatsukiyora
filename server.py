@@ -1,6 +1,7 @@
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 import sqlite3
+from contextlib import contextmanager
 import json
 import webbrowser
 import argparse
@@ -9,9 +10,15 @@ ROOT = Path(__file__).resolve().parent
 CATEGORIES = ("Знания", "Навыки", "Опыт", "Личность")
 DB = ROOT / "data" / "memory.db"
 
+@contextmanager
 def connect():
     DB.parent.mkdir(parents=True, exist_ok=True)
-    return sqlite3.connect(DB)
+    db = sqlite3.connect(DB)
+    try:
+        with db:
+            yield db
+    finally:
+        db.close()
 
 def init():
     with connect() as db:
