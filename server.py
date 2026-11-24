@@ -56,7 +56,7 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
     def do_GET(self):
         url = urlsplit(self.path)
-        if url.path in ("/api/universe", "/api/universe/page", "/api/universe/search"):
+        if url.path in ("/api/universe", "/api/universe/page", "/api/universe/search", "/api/universe/chat-search"):
             try:
                 q = parse_qs(url.query)
                 with connect() as db:
@@ -65,8 +65,10 @@ class Handler(SimpleHTTPRequestHandler):
                         result = universe.overview(db)
                     elif url.path == "/api/universe/page":
                         result = universe.page(db,q.get("group",[""])[0],int(q.get("after",["0"])[0]),int(q.get("start",["1"])[0]),int(q["end"][0]) if "end" in q else None)
-                    else:
+                    elif url.path == "/api/universe/search":
                         result = universe.search_documents(db,q.get("q",[""])[0])
+                    else:
+                        result = universe.chat_search(db,q.get("q",[""])[0])
                 return self.reply(200,result)
             except (ValueError, OverflowError):
                 return self.reply(400, {"error":"Invalid query"})

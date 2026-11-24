@@ -133,3 +133,43 @@ def search_documents(db, text):
     db.create_function("casefold",1,lambda value: value.casefold(),deterministic=True)
     return [{"id":i,"label":p} for i,p in db.execute(
         "SELECT id,path FROM documents WHERE present=1 AND indexed=1 AND instr(casefold(text_content),casefold(?))>0 ORDER BY id LIMIT 80",(text.strip(),))]
+
+def chat_search(db, text):
+    if not isinstance(text, str) or not 1 <= len(text.strip()) <= 200:
+        raise ValueError("Invalid search")
+
+    query = text.strip().casefold()
+    db.create_function("casefold", 1, str.casefold, deterministic=True)
+    matches = [
+        {"id": ident, "group": category, "label": label}
+        for ident, category, label in db.execute(
+            "SELECT id,category,label FROM memory WHERE instr(casefold(label),?)>0 ORDER BY id DESC LIMIT 5",
+            (query,),
+        )
+    ]
+    documents = db.execute(
+        """SELECT id,path,text_content FROM documents
+           WHERE present=1 AND (instr(casefold(path),?)>0
+               OR (indexed=1 AND instr(casefold(text_content),?)>0))
+           ORDER BY id DESC LIMIT 5""",
+        (query, query),
+    )
+    for ident, path, content in documents:
+        result = {"id": ident, "group": "Документы", "label": path}
+        folded = content.casefold()
+        offset = folded.find(query)
+        if offset >= 0:
+            # Case folding can expand characters. Convert the offset back to the original text.
+            if len(folded) != len(content):
+                position = 0
+                for index, character in enumerate(content):
+                    position += len(character.casefold())
+                    if position > offset:
+                        offset = index
+                        break
+            start = max(0, offset - 65)
+            end = min(len(content), offset + len(text.strip()) + 90)
+            snippet = " ".join(content[start:end].split())
+            result["excerpt"] = ("…" if start else "") + snippet + ("…" if end < len(content) else "")
+        matches.append(result)
+    return matches
