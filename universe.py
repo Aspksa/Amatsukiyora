@@ -130,5 +130,6 @@ def search_documents(db, text):
     if not isinstance(text,str) or not 1<=len(text.strip())<=200:
         raise ValueError("Invalid search")
     # Literal local search over the indexed prefix, not semantic search.
+    db.create_function("casefold",1,lambda value: value.casefold(),deterministic=True)
     return [{"id":i,"label":p} for i,p in db.execute(
-        "SELECT id,path FROM documents WHERE present=1 AND indexed=1 AND instr(lower(text_content),lower(?))>0 ORDER BY id LIMIT 80",(text.strip(),))]
+        "SELECT id,path FROM documents WHERE present=1 AND indexed=1 AND instr(casefold(text_content),casefold(?))>0 ORDER BY id LIMIT 80",(text.strip(),))]
