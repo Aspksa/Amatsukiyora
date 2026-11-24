@@ -1,6 +1,5 @@
 const svg = document.querySelector('#brain');
 const statusElement = document.querySelector('#status');
-const detail = document.querySelector('#detail');
 const ns = 'http://www.w3.org/2000/svg';
 const categories = ['Знания', 'Навыки', 'Опыт', 'Личность'];
 const colors = ['#52b8d4', '#45d4b5', '#dbad67', '#a395e8'];
@@ -22,7 +21,7 @@ function render() {
         const mid = -Math.PI / 2 + i * Math.PI / 2;
         const title = shape('text', { x: Math.cos(mid) * 320, y: Math.sin(mid) * 320, fill: color, 'text-anchor': 'middle', 'font-size': 12 }, scene);
         title.textContent = category + ' · ' + group.length;
-        group.slice(0, 120).forEach((entry, j) => { const row = Math.floor(j / 12), col = j % 12; const angle = mid + (col - 5.5) * .095; const r = 145 + row * 14; const px = Math.cos(angle) * r, py = Math.sin(angle) * r; shape('line', { x1: Math.cos(angle) * 76, y1: Math.sin(angle) * 76, x2: px, y2: py, stroke: color, opacity: .12 }, scene); const node = shape('circle', { cx: px, cy: py, r: 4, fill: color, stroke: color, 'data-entry-id': entry.id, tabindex: 0, role: 'button', 'aria-label': entry.label, class: 'node' + (initialized && !previous.has(entry.id) ? ' pulse' : '') }, scene); const select = () => { detail.textContent = entry.category + ' — ' + entry.label; document.dispatchEvent(new CustomEvent('memory:selected', { detail: entry.id })); }; node.addEventListener('click', select); node.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') {
+        group.slice(0, 120).forEach((entry, j) => { const row = Math.floor(j / 12), col = j % 12; const angle = mid + (col - 5.5) * .095; const r = 145 + row * 14; const px = Math.cos(angle) * r, py = Math.sin(angle) * r; shape('line', { x1: Math.cos(angle) * 76, y1: Math.sin(angle) * 76, x2: px, y2: py, stroke: color, opacity: .12 }, scene); const node = shape('circle', { cx: px, cy: py, r: 4, fill: color, stroke: color, 'data-entry-id': entry.id, tabindex: 0, role: 'button', 'aria-label': entry.label, class: 'node' + (initialized && !previous.has(entry.id) ? ' pulse' : '') }, scene); shape('title', {}, node).textContent = entry.label; const select = () => { document.dispatchEvent(new CustomEvent('memory:selected', { detail: entry.id })); }; node.addEventListener('click', select); node.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
             select();
         } }); const outer = shape('circle', { cx: Math.cos(mid + (j / Math.max(group.length, 1) - .5) * 1.2) * 390, cy: Math.sin(mid + (j / Math.max(group.length, 1) - .5) * 1.2) * 390, r: 5, fill: 'none', stroke: color, opacity: .6 }, scene); outer.addEventListener('click', select); });
@@ -53,15 +52,5 @@ svg.addEventListener('pointermove', e => { if (!drag || drag.id !== e.pointerId)
 for (const event of ['pointerup', 'pointercancel', 'lostpointercapture'])
     svg.addEventListener(event, () => { drag = null; });
 document.querySelector('#reset').addEventListener('click', () => { scale = 1; x = y = 0; transform(); });
-document.querySelector('#add').addEventListener('submit', async (e) => { e.preventDefault(); const input = document.querySelector('#label'); try {
-    const response = await fetch('/api/memory', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category: document.querySelector('#category').value, label: input.value }) });
-    if (!response.ok)
-        throw Error();
-    input.value = '';
-    await load();
-}
-catch {
-    statusElement.textContent = 'Не удалось сохранить запись';
-} });
 void load();
 export {};
