@@ -5,10 +5,13 @@ from contextlib import contextmanager
 import json
 import webbrowser
 import argparse
+from urllib.parse import urlsplit, parse_qs
+import universe
 
 ROOT = Path(__file__).resolve().parent
 CATEGORIES = ("Знания", "Навыки", "Опыт", "Личность")
 DB = ROOT / "data" / "memory.db"
+DOCUMENTS = ROOT / "Aspksa" / "Документы"
 
 @contextmanager
 def connect():
@@ -29,6 +32,7 @@ def init():
             source INTEGER NOT NULL REFERENCES memory(id),
             target INTEGER NOT NULL REFERENCES memory(id),
             CHECK(source < target), PRIMARY KEY(source,target))""")
+        universe.init(db)
 
 def add_link(source, target):
     if type(source) is not int or type(target) is not int or source == target:
@@ -51,6 +55,21 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
     def do_GET(self):
+        url = urlsplit(self.path)
+        if url.path in ("/api/universe", "/api/universe/page", "/api/universe/search"):
+            try:
+                q = parse_qs(url.query)
+                with connect() as db:
+                    db.execute("BEGIN")
+                    if url.path == "/api/universe":
+                        result = universe.overview(db)
+                    elif url.path == "/api/universe/page":
+                        result = universe.page(db,q.get("group",[""])[0],int(q.get("after",["0"])[0]),int(q.get("start",["1"])[0]),int(q["end"][0]) if "end" in q else None)
+                    else:
+                        result = universe.search_documents(db,q.get("q",[""])[0])
+                return self.reply(200,result)
+            except (ValueError, OverflowError):
+                return self.reply(400, {"error":"Invalid query"})
         if self.path == "/api/links":
             with connect() as db:
                 rows = db.execute("SELECT source,target FROM memory_links ORDER BY source,target LIMIT 5000").fetchall()
@@ -62,7 +81,7 @@ class Handler(SimpleHTTPRequestHandler):
             rows = db.execute("SELECT id,category,label FROM memory ORDER BY id DESC LIMIT 4800").fetchall()
         self.reply(200, [dict(row) for row in rows])
     def do_POST(self):
-        if self.path not in ("/api/memory", "/api/links"):
+        if self.path not in ("/api/memory", "/api/links", "/api/universe/scan", "/api/universe/document-link"):
             return self.reply(404, {"error":"not found"})
         if self.headers.get("Origin") != f"http://127.0.0.1:{self.server.server_port}":
             return self.reply(403, {"error":"origin"})
@@ -71,6 +90,17 @@ class Handler(SimpleHTTPRequestHandler):
             if not 0 < length <= 4096 or self.headers.get_content_type() != "application/json":
                 raise ValueError()
             data = json.loads(self.rfile.read(length))
+            if self.path == "/api/universe/scan":
+                with connect() as db:
+                    result = universe.scan(db,DOCUMENTS)
+                return self.reply(200,result)
+            if self.path == "/api/universe/document-link":
+                try:
+                    with connect() as db:
+                        universe.link_document(db,data["document"],data["memory"])
+                except sqlite3.IntegrityError:
+                    return self.reply(400,{"error":"Unknown endpoint"})
+                return self.reply(201,{"ok":True})
             if self.path == "/api/links":
                 try:
                     add_link(data["source"], data["target"])
@@ -92,6 +122,8 @@ if __name__ == "__main__":
     parser.add_argument("--no-browser", action="store_true")
     args = parser.parse_args()
     init()
+    with connect() as db:
+        universe.scan(db,DOCUMENTS)
     with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
         url = f"http://127.0.0.1:{server.server_port}"
         print(url, flush=True)
