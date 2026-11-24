@@ -14,6 +14,7 @@ DB = ROOT / "data" / "memory.db"
 def connect():
     DB.parent.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(DB)
+    db.execute("PRAGMA foreign_keys=ON")
     try:
         with db:
             yield db
@@ -23,6 +24,20 @@ def connect():
 def init():
     with connect() as db:
         db.execute("CREATE TABLE IF NOT EXISTS memory (id INTEGER PRIMARY KEY, category TEXT NOT NULL, label TEXT NOT NULL)")
+
+        db.execute("""CREATE TABLE IF NOT EXISTS memory_links (
+            source INTEGER NOT NULL REFERENCES memory(id),
+            target INTEGER NOT NULL REFERENCES memory(id),
+            CHECK(source < target), PRIMARY KEY(source,target))""")
+
+def add_link(source, target):
+    if type(source) is not int or type(target) is not int or source == target:
+        raise ValueError("Invalid endpoints")
+    if not (0 < source <= 2**53-1 and 0 < target <= 2**53-1):
+        raise ValueError("Invalid endpoints")
+    source, target = sorted((source, target))
+    with connect() as db:
+        db.execute("INSERT OR IGNORE INTO memory_links(source,target) VALUES (?,?)", (source,target))
 
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -36,6 +51,10 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
     def do_GET(self):
+        if self.path == "/api/links":
+            with connect() as db:
+                rows = db.execute("SELECT source,target FROM memory_links ORDER BY source,target LIMIT 5000").fetchall()
+            return self.reply(200, [{"source": a, "target": b} for a,b in rows])
         if self.path != "/api/memory":
             return super().do_GET()
         with connect() as db:
@@ -43,7 +62,7 @@ class Handler(SimpleHTTPRequestHandler):
             rows = db.execute("SELECT id,category,label FROM memory ORDER BY id DESC LIMIT 4800").fetchall()
         self.reply(200, [dict(row) for row in rows])
     def do_POST(self):
-        if self.path != "/api/memory":
+        if self.path not in ("/api/memory", "/api/links"):
             return self.reply(404, {"error":"not found"})
         if self.headers.get("Origin") != f"http://127.0.0.1:{self.server.server_port}":
             return self.reply(403, {"error":"origin"})
@@ -52,6 +71,12 @@ class Handler(SimpleHTTPRequestHandler):
             if not 0 < length <= 4096 or self.headers.get_content_type() != "application/json":
                 raise ValueError()
             data = json.loads(self.rfile.read(length))
+            if self.path == "/api/links":
+                try:
+                    add_link(data["source"], data["target"])
+                except sqlite3.IntegrityError:
+                    return self.reply(400, {"error":"Unknown endpoint"})
+                return self.reply(201, {"ok":True})
             category, label = data["category"], data["label"]
             if category not in CATEGORIES or not isinstance(label, str) or not 1 <= len(label.strip()) <= 200:
                 raise ValueError()
