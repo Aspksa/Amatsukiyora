@@ -127,7 +127,7 @@ body {
 }
 @media (max-width: 660px) {
   .universe { display: flex; flex-direction: column; align-items: stretch; justify-content: start; gap: 12px; }
-  #universe { width: min(100%, 540px); touch-action: pan-y; }
+  #universe { width: min(100%, 540px); }
   .map-chat { min-height: 260px; height: min(54dvh, 420px); padding: 13px 4px 0; }
   .chat-form input { font-size: 16px; }
   body { background-position: center top; }
@@ -189,3 +189,21 @@ body {
 #cloud-folders { margin: 15px 0 0; border: 1px solid #355259; border-radius: 6px; }
 #cloud-folder-list { display: grid; gap: 6px; max-height: 150px; overflow: auto; margin-block: 8px; }
 #cloud-folder-list label { display: flex; gap: 6px; align-items: start; overflow-wrap: anywhere; }
+
+/* Overview, clusters, and individual entries use the same orbital layout. */
+#universe[data-level="overview"] .overview-clusters,
+#universe:not([data-level="entries"]) .overview-previews { display: none; }
+.cluster-count { opacity: .8; }
+.category-caption, .cluster-count { pointer-events: visiblePainted; }
+.entry-label { font-weight: 550; opacity: 0; transition: opacity 160ms ease; }
+.entry-label[data-visible="true"] { opacity: 1; }
+.entry-label[data-priority="3"] { fill: #effcfe; font-weight: 700; }
+.direct-link { opacity: 1; }
+[data-selected="true"] .detail-connection { opacity: .18; }
+[data-selected="true"] .detail-node:not(.detail-node-related) { opacity: .54; }
+.connected-node { filter: drop-shadow(0 0 5px currentColor); }
+.overview-previews .universe-route { pointer-events: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .entry-label { transition: none; }
+}

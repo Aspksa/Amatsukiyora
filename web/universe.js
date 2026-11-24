@@ -56,13 +56,34 @@ function point(degrees, radius) {
 
 const angle = (/** @type {number} */ i) => -90 + i * 72;
 const indexOf = (/** @type {string} */ name) => categories.findIndex(category => category.name === name);
+const categoryColor = (/** @type {string} */ name) => categories[indexOf(name)]?.color || 'var(--muted)';
+const isDocument = (/** @type {string} */ name) => name === 'Документы';
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+/** @type {Match[]} */ let neighbors = [];
+
+/** @param {number} index */
+function entryPosition(index) {
+  const row = Math.floor(index / 20);
+  const a = -86 + (index % 20) * 18 + row * 6;
+  const r = 145 + row * 70;
+  return { a, r, ...point(a, r) };
+}
+
+/** @param {Point} p @param {string} group @param {SVGElement} parent @param {number} size @param {Record<string,string|number>} attrs */
+function entryShape(p, group, parent, size, attrs) {
+  return isDocument(group)
+    ? shape('rect', { x: p.x - size, y: p.y - size * 1.15, width: size * 2, height: size * 2.3, rx: size * .28, ...attrs }, parent)
+    : shape('circle', { cx: p.x, cy: p.y, r: size, ...attrs }, parent);
+}
 
 /** @param {Point} p */
 const xy = p => p.x.toFixed(2) + ' ' + p.y.toFixed(2);
 
 /** @param {SVGElement} parent @param {Point} p @param {string} value @param {string} color @param {number} size */
 function label(parent, p, value, color, size) {
-  shape('text', { ...p, fill: color, 'font-size': size, 'text-anchor': 'middle', class: 'universe-text' }, parent).textContent = value;
+  const text = shape('text', { ...p, fill: color, 'font-size': size, 'text-anchor': 'middle', class: 'universe-text' }, parent);
+  text.textContent = value;
+  return text;
 }
 
 /** @param {SVGElement} node @param {string} title @param {()=>void} action */
@@ -136,7 +157,7 @@ function drawCore(parent) {
   }
   shape('circle', { r: 75, fill: 'none', stroke: '#69c5bf', 'stroke-width': 1, opacity: .52, class: 'core-aura' }, parent);
   const nucleus = shape('circle', { r: 63, fill: 'url(#core-light)', stroke: '#63e5df', 'stroke-width': 1.7, color: '#63e5df' }, parent);
-  if (focus) activate(nucleus, 'Общий вид', () => {
+  activate(nucleus, 'Общий вид', () => {
     openOverview();
     svg.focus();
   });
@@ -160,32 +181,37 @@ function drawGroup(group, i, nodes, maximum) {
   const width = group.bins[0] ? group.bins[0].end - group.bins[0].start + 1 : 1;
   const hub = point(a, 137);
   const caption = point(a, 333);
-  label(nodes, caption, name + '  ' + fmt(group.count), color, 15);
+  const clusters = shape('g', { class: 'overview-clusters' }, nodes);
   shape('path', { d: arc(a - 28, a + 28, 472), stroke: color, 'stroke-width': .9, opacity: .25, fill: 'none' }, nodes);
 
   for (const bin of group.bins) {
     const hit = matches.some(match => match.group === name && bin.start <= match.id && match.id <= bin.end);
     const slot = (bin.start - 1) / width;
-    const openBin = () => open(name, bin.start, bin.end);
     const range = name + ' · ' + fmt(bin.count);
     const outerAngle = a + ((slot % 8) - 3.5) * 5.9 + (slot >= 8 ? 1.8 : 0);
     const outerRadius = 456 - Math.floor(slot / 8) * 24;
     const outer = point(outerAngle, outerRadius);
-    const ring = shape('circle', { cx: outer.x, cy: outer.y, r: 9.2, fill: '#0e1c24', stroke: color, 'stroke-width': 1.2, color, class: hit ? 'orbit-token chat-map-hit' : 'orbit-token' }, nodes);
-    activate(ring, 'Орбита: ' + range, openBin);
-    shape('circle', { cx: outer.x, cy: outer.y, r: 5.6, fill: 'none', stroke: color, 'stroke-width': .8, opacity: .64, 'pointer-events': 'none' }, nodes);
-    shape('circle', { cx: outer.x, cy: outer.y, r: 1.65, fill: color, opacity: .92, 'pointer-events': 'none' }, nodes);
+    const ring = shape('circle', { cx: outer.x, cy: outer.y, r: 9.2, fill: '#0e1c24', stroke: color, 'stroke-width': 1.2, color, class: hit ? 'orbit-token chat-map-hit' : 'orbit-token' }, clusters);
+    activate(ring, 'Орбита: ' + range, () => open(name, bin.start, bin.end, outer));
+    shape('circle', { cx: outer.x, cy: outer.y, r: 5.6, fill: 'none', stroke: color, 'stroke-width': .8, opacity: .64, 'pointer-events': 'none' }, clusters);
+    shape('circle', { cx: outer.x, cy: outer.y, r: 1.65, fill: color, opacity: .92, 'pointer-events': 'none' }, clusters);
     if (slot < 8 && bin.count > maximum * .24) {
       const satellite = point(outerAngle - 1.9, 477);
-      shape('circle', { cx: satellite.x, cy: satellite.y, r: 5.2, fill: '#0d1b23', stroke: color, 'stroke-width': .9, opacity: .64 }, nodes);
-      shape('circle', { cx: satellite.x, cy: satellite.y, r: 1.25, fill: color, opacity: .71 }, nodes);
+      shape('circle', { cx: satellite.x, cy: satellite.y, r: 5.2, fill: '#0d1b23', stroke: color, 'stroke-width': .9, opacity: .64 }, clusters);
+      shape('circle', { cx: satellite.x, cy: satellite.y, r: 1.25, fill: color, opacity: .71 }, clusters);
     }
 
     const degrees = a + ((slot % 4) - 1.5) * 11.5;
     const radius = 168 + Math.floor(slot / 4) * 35;
     const p = point(degrees, radius);
-    const cluster = shape('g', { color, class: 'micro-cluster' }, nodes);
-    activate(cluster, 'Кластер: ' + range, openBin);
+    const cluster = shape('g', { color, class: 'micro-cluster' }, clusters);
+    activate(cluster, 'Кластер: ' + range, () => open(name, bin.start, bin.end, p));
+    cluster.dataset.cluster = clusterKey(name, bin);
+    cluster.dataset.x = String(p.x);
+    cluster.dataset.y = String(p.y);
+    cluster.dataset.group = name;
+    cluster.dataset.start = String(bin.start);
+    cluster.dataset.end = String(bin.end);
     shape('circle', { cx: p.x, cy: p.y, r: 16, fill: 'transparent', stroke: 'transparent', class: hit ? 'cluster-target chat-map-hit' : 'cluster-target' }, cluster);
     const dots = Math.max(1, Math.ceil(Math.sqrt(bin.count / maximum) * 22));
     const rows = Math.ceil(dots / 5);
@@ -195,14 +221,20 @@ function drawGroup(group, i, nodes, maximum) {
       const signal = (slot * 7 + dot * 3 + i) % 13 === 0;
       shape('circle', { cx: q.x, cy: q.y, r: signal ? 2.05 : 1.55, fill: color, opacity: signal ? .95 : .64, class: signal ? 'cluster-signal' : '', 'pointer-events': 'none' }, cluster);
     }
+    label(cluster, { x: p.x, y: p.y + 24 }, fmt(bin.count), color, 9).classList.add('cluster-count');
     if (slot % 3 === 0) {
       const d = 'M ' + xy(p) + ' Q ' + xy(point(degrees, 313)) + ' ' + xy(outer);
-      shape('path', { d, fill: 'none', stroke: color, 'stroke-width': .65, opacity: .17, 'pointer-events': 'none' }, nodes);
+      shape('path', { d, fill: 'none', stroke: color, 'stroke-width': .65, opacity: .17, 'pointer-events': 'none' }, clusters);
     }
   }
-  const node = shape('circle', { cx: hub.x, cy: hub.y, r: 9, fill: '#0d1a22', stroke: color, 'stroke-width': 1.6, color }, nodes);
-  activate(node, name + ' · ' + fmt(group.count), () => open(name));
-  shape('circle', { cx: hub.x, cy: hub.y, r: 3.3, fill: color, 'pointer-events': 'none' }, nodes);
+  const category = shape('g', { color, class: 'category-target' }, nodes);
+  activate(category, name + ' · ' + fmt(group.count), () => open(name));
+  shape('circle', { cx: hub.x, cy: hub.y, r: 19, fill: 'transparent', stroke: 'none' }, category);
+  shape('circle', { cx: hub.x, cy: hub.y, r: 9, fill: '#0d1a22', stroke: color, 'stroke-width': 1.6,
+    class: matches.some(match => match.group === name) ? 'chat-map-hit' : '' }, category);
+  shape('circle', { cx: hub.x, cy: hub.y, r: 3.3, fill: color, 'pointer-events': 'none' }, category);
+  const captionText = label(category, caption, name + '  ' + fmt(group.count), color, 15);
+  captionText.classList.add('category-caption');
 }
 
 function drawOverview() {
@@ -231,88 +263,145 @@ function drawOverview() {
   }
 }
 
-function drawDetails() {
+/** @param {SVGElement} parent @param {Point} p @param {Match} item @param {number} priority @param {boolean} [offset] */
+function entryLabel(parent, p, item, priority, offset = false) {
+  const name = item.label.length > 29 ? item.label.slice(0, 28) + '…' : item.label;
+  const text = label(parent, { x: p.x + (offset ? 11 : 0), y: p.y - (offset ? 1 : 14) },
+    name, categoryColor(item.group), 13);
+  if (offset) text.setAttribute('text-anchor', 'start');
+  text.classList.add('entry-label');
+  text.dataset.priority = String(priority);
+  text.dataset.anchorX = String(p.x);
+  text.dataset.anchorY = String(p.y);
+}
+
+/** @param {SVGElement} parent @param {Point} p @param {Point|null} origin @param {number} index */
+function entryLayer(parent, p, origin, index) {
+  const layer = shape('g', {}, parent);
+  if (origin && !reducedMotion.matches) {
+    layer.classList.add('cluster-entry-arrival');
+    layer.animate([
+      { transform: `translate(${origin.x - p.x}px, ${origin.y - p.y}px)`, opacity: .25 },
+      { transform: 'translate(0px, 0px)', opacity: 1 },
+    ], { duration: 480, delay: Math.min(index * 13, 220), easing: 'cubic-bezier(.19,.72,.29,1)', fill: 'backwards' });
+  }
+  return layer;
+}
+
+/** @param {Point|null} origin */
+function drawDetails(origin) {
   if (!focus || !page) return;
-  const groupIndex = indexOf(focus.name);
-  const { color } = categories[groupIndex];
+  const group = focus.name;
+  const groupIndex = indexOf(group);
+  const color = categoryColor(group);
   const routes = shape('g', {}, content), nodes = shape('g', {}, content);
-  const positions = new Map(page.items.map((item, i) => {
-    const a = -86 + (i % 20) * 18 + Math.floor(i / 20) * 6;
-    const r = 145 + Math.floor(i / 20) * 70;
-    return [item.id, { a, r, ...point(a, r) }];
-  }));
+  const positions = new Map(page.items.map((item, i) => [item.id, entryPosition(i)]));
   const selected = new Set([chosen]);
+  const selectedPoint = positions.get(chosen);
   page.links.forEach((link, i) => {
     const from = positions.get(link.source), to = positions.get(link.target);
     const active = link.source === chosen || link.target === chosen;
     if (active) selected.add(link.source).add(link.target);
-    drawRoute(routes, track(from.a, to.a, from.r, to.r, Math.max(from.r, to.r) + 16 + i % 4 * 5), color, active ? 12 : 1, active);
+    const lane = shape('g', { class: active ? 'direct-link' : 'detail-connection' }, routes);
+    drawRoute(lane, track(from.a, to.a, from.r, to.r, Math.max(from.r, to.r) + 16 + i % 4 * 5), color, active ? 12 : 1, active);
   });
   page.external.forEach(edge => {
     const i = indexOf(edge.group);
-    if (i < 0 || i === groupIndex) return;
+    if (i < 0 || i === groupIndex || edge.id === chosen && neighbors.some(node => node.group === edge.group)) return;
     const p = positions.get(edge.id);
-    drawRoute(routes, track(p.a, angle(i) + 4, p.r, 435, 374 + i * 9), categories[i].color, edge.count, edge.id === chosen);
+    const active = edge.id === chosen;
+    const lane = shape('g', { class: active ? 'direct-link' : 'detail-connection' }, routes);
+    drawRoute(lane, track(p.a, angle(i) + 4, p.r, 435, 374 + i * 9), categories[i].color, edge.count, active);
   });
   categories.forEach((category, i) => {
     if (i === groupIndex) return;
-    const p = point(angle(i) + 4, 435);
+    const p = point(angle(i) + 4, 455);
     const station = shape('circle', { cx: p.x, cy: p.y, r: 8, stroke: category.color, fill: '#0b1627', 'stroke-width': 2, color: category.color,
       class: matches.some(match => match.group === category.name) ? 'chat-map-hit' : '' }, nodes);
     activate(station, category.name, () => open(category.name));
     label(nodes, { x: p.x, y: p.y + 25 }, category.name, category.color, 15);
   });
-  page.items.forEach(item => {
+  if (selectedPoint) {
+    const remote = neighbors.filter(node => node.group !== group || !positions.has(node.id));
+    remote.forEach((neighbor, index) => {
+      const p = point(-90 + index * 360 / remote.length, 395);
+      const accent = categoryColor(neighbor.group);
+      const lane = shape('g', { class: 'direct-link' }, routes);
+      drawRoute(lane, `M ${xy(selectedPoint)} Q ${xy({ x: p.x * .65, y: p.y * .65 })} ${xy(p)}`, accent, 8, true);
+      const node = entryShape(p, neighbor.group, nodes, 8, { fill: '#132532', stroke: accent, 'stroke-width': 2.5,
+        color: accent, class: 'connected-node', 'data-neighbor': neighbor.group + ':' + neighbor.id });
+      activate(node, neighbor.label, () => { void inspectMatch(neighbor); });
+      entryLabel(nodes, p, neighbor, 2);
+    });
+  }
+  page.items.forEach((item, index) => {
     const p = positions.get(item.id);
-    const hit = matches.some(match => match.group === focus?.name && match.id === item.id);
+    const hit = matches.some(match => match.group === group && match.id === item.id);
+    const isChosen = item.id === chosen;
     const highlighted = selected.has(item.id) || hit;
-    const attrs = { fill: highlighted ? '#fff' : '#102338', stroke: color, 'stroke-width': highlighted ? 3 : 2, color };
-    const node = groupIndex === 4
-      ? shape('rect', { x: p.x - 5, y: p.y - 6, width: 10, height: 12, rx: 2, ...attrs }, nodes)
-      : shape('circle', { cx: p.x, cy: p.y, r: highlighted ? 8 : 5.7, ...attrs }, nodes);
-    node.dataset.entry = String(item.id);
+    const layer = entryLayer(nodes, p, origin, index);
+    layer.classList.add('detail-node');
+    if (highlighted) layer.classList.add('detail-node-related');
+    const node = entryShape(p, group, layer, highlighted ? 8 : 6, {
+      fill: highlighted ? color : '#102338', stroke: color, 'stroke-width': highlighted ? 2.6 : 2, color,
+      'data-entry': item.id, 'data-kind': isDocument(group) ? 'document' : 'record',
+    });
     if (hit) node.classList.add('chat-map-hit');
+    if (highlighted && !isChosen && selected.has(item.id)) node.classList.add('connected-node');
     activate(node, item.label, () => choose(item, node === document.activeElement));
-    if (chosen === item.id) {
+    if (isChosen) {
       node.classList.add('universe-selected');
-      shape('circle', { cx: p.x, cy: p.y, r: 16, fill: 'none', stroke: color, 'stroke-width': 1.5, opacity: .8, class: 'selection-ring', 'pointer-events': 'none' }, nodes);
+      shape('circle', { cx: p.x, cy: p.y, r: 16, fill: 'none', stroke: color, 'stroke-width': 1.5, opacity: .8, class: 'selection-ring', 'pointer-events': 'none' }, layer);
     }
-    if (page.items.length <= 16 || highlighted) {
-      const name = item.label.length > 22 ? item.label.slice(0, 21) + '…' : item.label;
-      label(nodes, { x: p.x, y: p.y - 14 }, name, color, 14);
-    }
+    entryLabel(layer, p, { ...item, group }, isChosen ? 3 : highlighted ? 2 : 1);
   });
 }
 
-function renderMap(animate = false) {
+/** @param {boolean} [animate] @param {Point|null} [origin] */
+function renderMap(animate = false, origin = null) {
   if (selectionLabel) {
     const selected = page?.items.find(item => item.id === chosen);
     selectionLabel.hidden = !selected;
     selectionLabel.textContent = selected ? 'Узел: ' + selected.label : '';
   }
+  svg.dataset.selected = String(!!chosen);
   svg.dataset.view = focus ? 'detail' : 'overview';
   content.replaceChildren();
   content.classList.remove('scene-content');
-  if (focus) drawDetails();
-  else drawOverview();
+  if (focus) drawDetails(origin);
+  else {
+    drawOverview();
+    drawPreviews();
+  }
   drawCore(content);
   if (focus) drawPaging(content);
   if (animate) {
     content.getBoundingClientRect();
     content.classList.add('scene-content');
   }
+  updateLabels();
+  schedulePreviews();
 }
 
 /** @param {Item} item @param {boolean} [restoreFocus] */
 function choose(item, restoreFocus = false) {
   chosen = item.id;
+  neighbors = [];
   mapStatus.textContent = item.label;
   saveView();
   renderMap();
-  if (restoreFocus) {
-    const node = /** @type {SVGElement|null} */ (svg.querySelector('[data-entry="' + item.id + '"]'));
-    node?.focus();
-  }
+  const selector = '[data-entry="' + item.id + '"]';
+  if (restoreFocus) /** @type {SVGElement|null} */ (svg.querySelector(selector))?.focus();
+  if (demo) return;
+  const selectedPage = page;
+  const query = new URLSearchParams({ group: page.group, id: String(item.id) });
+  void fetchData('/api/universe/neighbors?' + query).then(result => {
+    if (selectedPage !== page || chosen !== item.id) return;
+    neighbors = result;
+    const focused = document.activeElement === svg.querySelector(selector);
+    renderMap();
+    if (focused) /** @type {SVGElement|null} */ (svg.querySelector(selector))?.focus();
+  }).catch(() => {});
 }
 
 function getSelection() {
@@ -352,8 +441,8 @@ async function loadOverview() {
   }
 }
 
-/** @param {Focus} target @param {number} cursor @param {number[]} stack @param {Match} [match] */
-async function loadPage(target, cursor, stack, match) {
+/** @param {Focus} target @param {number} cursor @param {number[]} stack @param {Match} [match] @param {Point|null} [origin] */
+async function loadPage(target, cursor, stack, match, origin = null) {
   const token = ++request;
   const fromMap = svg.contains(document.activeElement);
   let loaded = false;
@@ -367,18 +456,20 @@ async function loadPage(target, cursor, stack, match) {
     if (token !== request) return;
     if (!result) throw Error('Missing page');
     loaded = true;
+    if (origin) setView(1, 0, 0);
     focus = target;
     page = result;
     after = cursor;
     history = stack;
     chosen = 0;
+    neighbors = [];
     mapStatus.textContent = page.items.length ? fmt(page.items.length) + ' элементов на странице' : 'В этой категории пока нет записей.';
   } catch {
     if (token === request) mapStatus.textContent = 'Не удалось загрузить записи.';
   } finally {
     if (token === request) {
       pending = false;
-      renderMap(true);
+      renderMap(true, loaded ? origin : null);
       if (loaded && fromMap && document.activeElement === document.body) svg.focus();
     }
   }
@@ -394,10 +485,12 @@ async function loadPage(target, cursor, stack, match) {
   return false;
 }
 
-/** @param {string} name @param {number} [start] @param {number} [end] */
-function open(name, start = defaults.start, end = defaults.end) {
-  setView(1, 0, 0);
-  void loadPage({ name, start, end }, 0, []);
+/** @param {string} name @param {number} [start] @param {number} [end] @param {Point|null} [origin] */
+function open(name, start = defaults.start, end = defaults.end, origin = null) {
+  const anchor = origin && { x: scale * origin.x + x, y: scale * origin.y + y };
+  const arrival = anchor && { x: Math.max(-510, Math.min(510, anchor.x)), y: Math.max(-510, Math.min(510, anchor.y)) };
+  if (!arrival) setView(1, 0, 0);
+  void loadPage({ name, start, end }, 0, [], undefined, arrival);
 }
 
 function openOverview() {
@@ -407,18 +500,25 @@ function openOverview() {
   page = null;
   history = [];
   chosen = 0;
+  neighbors = [];
   mapStatus.textContent = 'Общий вид карты.';
   setView(1, 0, 0);
   renderMap(true);
   if (!overview) void loadOverview();
 }
 
+let labelFrame = 0;
 /** @param {number} value @param {number} tx @param {number} ty */
 function setView(value, tx, ty) {
   scale = value;
   x = tx;
   y = ty;
   scene.setAttribute('transform', 'translate(' + x + ' ' + y + ') scale(' + scale + ')');
+  if (!labelFrame) labelFrame = requestAnimationFrame(() => {
+    labelFrame = 0;
+    updateLabels();
+  });
+  schedulePreviews();
   saveView();
 }
 
@@ -444,7 +544,7 @@ function drawPaging(parent) {
 }
 
 svg.addEventListener('keydown', event => {
-  if (event.key === 'Escape' && focus) openOverview();
+  if (event.key === 'Escape') openOverview();
   else if (event.key === '0') setView(1, 0, 0);
   else if (event.key === '+' || event.key === '=') zoom(1.28, { x: 0, y: 0 });
   else if (event.key === '-') zoom(1 / 1.28, { x: 0, y: 0 });
@@ -452,32 +552,66 @@ svg.addEventListener('keydown', event => {
   event.preventDefault();
 });
 
+/** @param {Point} client */
+function mapPoint(client) {
+  const matrix = svg.getScreenCTM();
+  return matrix && new DOMPoint(client.x, client.y).matrixTransform(matrix.inverse());
+}
+
 svg.addEventListener('wheel', event => {
   event.preventDefault();
-  const matrix = svg.getScreenCTM();
-  if (!matrix) return;
-  const p = new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse());
-  zoom(Math.exp(-event.deltaY * .001), p);
+  const p = mapPoint({ x: event.clientX, y: event.clientY });
+  if (p) zoom(Math.exp(-event.deltaY * .001), p);
 }, { passive: false });
-/** @type {{id:number,x:number,y:number}|null} */ let drag = null;
+
+/** @type {Map<number,{start:Point, point:Point}>} */ const pointers = new Map();
+let moved = false;
 svg.addEventListener('pointerdown', event => {
-  if (drag || /** @type {Element} */ (event.target).closest('.universe-node')) return;
-  drag = { id: event.pointerId, x: event.clientX, y: event.clientY };
-  svg.setPointerCapture(event.pointerId);
+  if (event.button !== 0 || pointers.size >= 2) return;
+  if (!pointers.size) moved = false;
+  const point = { x: event.clientX, y: event.clientY };
+  const node = !!/** @type {Element} */ (event.target).closest('.universe-node');
+  pointers.set(event.pointerId, { start: point, point });
+  if (pointers.size === 2) {
+    moved = true;
+    for (const id of pointers.keys()) svg.setPointerCapture(id);
+  } else if (!node) svg.setPointerCapture(event.pointerId);
 });
+
 svg.addEventListener('pointermove', event => {
-  if (!drag || drag.id !== event.pointerId) return;
-  const matrix = svg.getScreenCTM();
-  if (!matrix) return;
-  setView(scale, x + (event.clientX - drag.x) / matrix.a, y + (event.clientY - drag.y) / matrix.d);
-  drag.x = event.clientX;
-  drag.y = event.clientY;
+  const pointer = pointers.get(event.pointerId);
+  if (!pointer) return;
+  const next = { x: event.clientX, y: event.clientY };
+  const before = pointer.point;
+  if (pointers.size === 1) {
+    if (!moved && Math.hypot(next.x - pointer.start.x, next.y - pointer.start.y) < 5) return;
+    if (!moved) svg.setPointerCapture(event.pointerId);
+    moved = true;
+    const a = mapPoint(before), b = mapPoint(next);
+    if (a && b) setView(scale, x + b.x - a.x, y + b.y - a.y);
+  } else {
+    const other = Array.from(pointers.entries()).find(([id]) => id !== event.pointerId)[1].point;
+    const previousMiddle = mapPoint({ x: (before.x + other.x) / 2, y: (before.y + other.y) / 2 });
+    const nextMiddle = mapPoint({ x: (next.x + other.x) / 2, y: (next.y + other.y) / 2 });
+    const previousDistance = Math.hypot(before.x - other.x, before.y - other.y);
+    if (previousMiddle && nextMiddle && previousDistance > 1) {
+      const factor = Math.hypot(next.x - other.x, next.y - other.y) / previousDistance;
+      const value = Math.min(8, Math.max(.65, scale * factor));
+      setView(value, nextMiddle.x - (previousMiddle.x - x) * value / scale,
+        nextMiddle.y - (previousMiddle.y - y) * value / scale);
+    }
+  }
+  pointer.point = next;
 });
-for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) {
-  svg.addEventListener(event, e => {
-    if (drag?.id === /** @type {PointerEvent} */ (e).pointerId) drag = null;
-  });
-}
+window.addEventListener('pointerup', event => pointers.delete(event.pointerId));
+svg.addEventListener('pointercancel', event => pointers.delete(event.pointerId));
+svg.addEventListener('lostpointercapture', event => {
+  if (event.target === svg) pointers.delete(event.pointerId);
+});
+svg.addEventListener('click', event => {
+  if (moved && event.detail > 0) event.stopPropagation();
+}, { capture: true });
+
 const demoFullPages = demo ? Object.entries(demo.pages).filter(([key]) => {
   const q = new URLSearchParams(key);
   return q.get('start') === String(defaults.start) && q.get('end') === String(defaults.end);
@@ -500,7 +634,125 @@ function getDemoMatchPage(match) {
 let matches = [];
 let viewReady = false;
 let saveTimer = 0;
+/** @type {Map<string,Page>} */ const previewCache = new Map();
+/** @type {Set<string>} */ const previewLoading = new Set();
+/** @type {Set<string>} */ const previewFailed = new Set();
+let previewTimer = 0;
+/** @type {SVGGElement|null} */ let previewLayer = null;
+/** @type {string} */ let previewSignature = '';
 const ready = loadOverview();
+
+/** @param {string} group @param {{start:number,end:number}} range */
+function clusterKey(group, range) {
+  return group + ':' + range.start + ':' + range.end;
+}
+
+function visibleClusters() {
+  const bounds = svg.getBoundingClientRect();
+  const middle = { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 };
+  const matrix = scene.getScreenCTM();
+  if (!matrix) return [];
+  return Array.from(content.querySelectorAll('[data-cluster]'), el => {
+    const node = /** @type {SVGGElement} */ (el);
+    const position = { x: Number(node.dataset.x), y: Number(node.dataset.y) };
+    const screen = new DOMPoint(position.x, position.y).matrixTransform(matrix);
+    if (screen.x < bounds.left - 55 || screen.x > bounds.right + 55 ||
+        screen.y < bounds.top - 55 || screen.y > bounds.bottom + 55) return null;
+    return { key: node.dataset.cluster, group: node.dataset.group, start: Number(node.dataset.start),
+      end: Number(node.dataset.end), position, distance: Math.hypot(screen.x - middle.x, screen.y - middle.y) };
+  }).filter(row => row !== null).sort((a, b) => a.distance - b.distance).slice(0, 6);
+}
+
+function drawPreviews() {
+  if (focus || scale < 2.55) return;
+  const clusters = visibleClusters().filter(cluster => previewCache.has(cluster.key));
+  const signature = clusters.map(cluster => cluster.key).join('|');
+  if (previewLayer?.isConnected && signature === previewSignature) return;
+  previewLayer?.remove();
+  previewSignature = signature;
+  previewLayer = shape('g', { class: 'overview-previews' }, content);
+  for (const cluster of clusters) {
+    const { group, position } = cluster;
+    const color = categoryColor(group);
+    const detail = previewCache.get(cluster.key);
+    const nodes = detail.items.slice(0, 5);
+    const positions = new Map(nodes.map((item, i) => [item.id, {
+      x: position.x + 21 + (i % 2) * 23, y: position.y + (i - (nodes.length - 1) / 2) * 17,
+    }]));
+    for (const link of detail.links) {
+      const a = positions.get(link.source), b = positions.get(link.target);
+      if (a && b) shape('path', { d: `M ${xy(a)} L ${xy(b)}`, stroke: color, opacity: .65, class: 'universe-route' }, previewLayer);
+    }
+    for (const item of nodes) {
+      const p = positions.get(item.id);
+      const match = { ...item, group };
+      const hit = matches.some(row => row.group === group && row.id === item.id);
+      const node = entryShape(p, group, previewLayer, 4.5, { fill: '#132532', stroke: color, color,
+        'stroke-width': 1.5, class: hit ? 'chat-map-hit' : '', 'data-preview-entry': item.id });
+      activate(node, item.label, () => { void inspectMatch(match); });
+      entryLabel(previewLayer, p, match, hit ? 2 : 1, true);
+    }
+  }
+}
+
+function schedulePreviews() {
+  window.clearTimeout(previewTimer);
+  if (focus || scale < 2.55) return;
+  previewTimer = window.setTimeout(() => {
+    for (const cluster of visibleClusters()) {
+      const { key, group, start, end } = cluster;
+      if (previewCache.has(key) || previewLoading.has(key) || previewFailed.has(key)) continue;
+      const query = new URLSearchParams({ group, after: '0', start: String(start), end: String(end) }).toString();
+      previewLoading.add(key);
+      const result = demo ? Promise.resolve(demo.pages[query]) : fetchData('/api/universe/page?' + query);
+      void result.then(data => {
+        if (data) {
+          previewCache.set(key, data);
+          if (previewCache.size > 60) previewCache.delete(previewCache.keys().next().value);
+        }
+        drawPreviews();
+        updateLabels();
+      }).catch(() => {
+        previewFailed.add(key);
+        window.setTimeout(() => previewFailed.delete(key), 2000);
+      }).finally(() => previewLoading.delete(key));
+    }
+    drawPreviews();
+    updateLabels();
+  }, 95);
+}
+
+function updateLabels() {
+  svg.dataset.level = scale >= 2.55 ? 'entries' : scale >= 1.2 ? 'clusters' : 'overview';
+  const matrix = scene.getScreenCTM();
+  if (!matrix) return;
+  const bounds = svg.getBoundingClientRect();
+  const labels = Array.from(content.querySelectorAll('.entry-label'), node => /** @type {SVGTextElement} */ (node))
+    .sort((a, b) => Number(b.dataset.priority) - Number(a.dataset.priority));
+  const fontSize = String(Math.min(32, Math.max(13, 11 / Math.abs(matrix.a))));
+  for (const text of labels) {
+    if (text.getAttribute('font-size') !== fontSize) text.setAttribute('font-size', fontSize);
+  }
+  /** @type {DOMRect[]} */ const occupied = [];
+  for (const text of labels) {
+    const priority = Number(text.dataset.priority);
+    const anchor = new DOMPoint(Number(text.dataset.anchorX), Number(text.dataset.anchorY)).matrixTransform(matrix);
+    const readable = priority >= 2 || matrix.a * 13 >= 10;
+    const nearby = anchor.x >= bounds.left - 6 && anchor.x <= bounds.right + 6 &&
+      anchor.y >= bounds.top - 6 && anchor.y <= bounds.bottom + 6;
+    if (!readable || !nearby) {
+      text.dataset.visible = 'false';
+      continue;
+    }
+    const box = text.getBoundingClientRect();
+    const overlaps = occupied.some(other => box.left < other.right + 4 && box.right > other.left - 4 &&
+      box.top < other.bottom + 3 && box.bottom > other.top - 3);
+    text.dataset.visible = String(!overlaps || priority === 3);
+    if (!overlaps || priority === 3) occupied.push(box);
+  }
+}
+
+new ResizeObserver(updateLabels).observe(svg);
 
 function currentView() {
   return { scale, x, y, focus, after, chosen, history };
@@ -524,9 +776,30 @@ window.addEventListener('pagehide', () => {
   }).catch(() => {});
 });
 
+/** @param {Match} match */
+function inspectMatch(match) {
+    if (indexOf(match.group) < 0) return Promise.resolve(false);
+    const index = page?.group === match.group ? page.items.findIndex(item => item.id === match.id) : -1;
+    if (index >= 0) {
+      choose(page.items[index]);
+      const p = entryPosition(index);
+      if (scale > 1) setView(scale, -p.x * scale, -p.y * scale);
+      svg.scrollIntoView({ block: 'nearest' });
+      return Promise.resolve(true);
+    }
+    return loadPage({ name: match.group, start: match.id, end: match.id }, 0, [], match).then(found => {
+      if (found) {
+        const p = entryPosition(0);
+        setView(scale, scale > 1 ? -p.x * scale : 0, scale > 1 ? -p.y * scale : 0);
+      }
+      return found;
+    });
+}
+
 if (!demo) startCloudSettings();
 startChat({
   local: !!demo,
+  categoryColor,
   highlight: hits => {
     matches = hits;
     renderMap();
@@ -552,25 +825,7 @@ startChat({
       .map(item => ({ id: item.id, group: row.group, label: item.label })));
     return Promise.resolve(matches.slice(0, 8));
   },
-  inspect: match => {
-    if (indexOf(match.group) < 0) return Promise.resolve(false);
-    const index = page?.group === match.group ? page.items.findIndex(item => item.id === match.id) : -1;
-    if (index >= 0) {
-      choose(page.items[index]);
-      const row = Math.floor(index / 20);
-      const p = point(-86 + (index % 20) * 18 + row * 6, 145 + row * 70);
-      if (scale > 1) setView(scale, -p.x * scale, -p.y * scale);
-      svg.scrollIntoView({ block: 'nearest' });
-      return Promise.resolve(true);
-    }
-    return loadPage({ name: match.group, start: match.id, end: match.id }, 0, [], match).then(found => {
-      if (found) {
-        const p = point(-86, 145);
-        setView(scale, scale > 1 ? -p.x * scale : 0, scale > 1 ? -p.y * scale : 0);
-      }
-      return found;
-    });
-  },
+  inspect: inspectMatch,
 });
 
 if (demo) get('chat-source').textContent = 'Демонстрационные данные';

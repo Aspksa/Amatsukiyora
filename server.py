@@ -148,7 +148,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.reply(403, {"error": "host"})
             key, model = cloud_settings()
             return self.reply(200, {"hasKey": bool(key), "model": model})
-        if url.path in ("/api/universe", "/api/universe/page", "/api/universe/search", "/api/universe/chat-search"):
+        if url.path in ("/api/universe", "/api/universe/page", "/api/universe/search", "/api/universe/chat-search", "/api/universe/neighbors"):
             try:
                 q = parse_qs(url.query)
                 with connect() as db:
@@ -159,6 +159,9 @@ class Handler(SimpleHTTPRequestHandler):
                         result = universe.page(db,q.get("group",[""])[0],int(q.get("after",["0"])[0]),int(q.get("start",["1"])[0]),int(q["end"][0]) if "end" in q else None)
                     elif url.path == "/api/universe/search":
                         result = universe.search_documents(db,q.get("q",[""])[0])
+                    elif url.path == "/api/universe/neighbors":
+                        node = map_chat.selection(db, {"group": q.get("group", [""])[0], "id": int(q.get("id", ["0"])[0])})
+                        result = map_chat.neighbors(db, node)
                     else:
                         result = universe.chat_search(db,q.get("q",[""])[0])
                 return self.reply(200,result)

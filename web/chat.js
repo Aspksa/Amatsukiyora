@@ -5,6 +5,7 @@ import { request } from "./cloud-settings.js";
 /** @typedef {{id:number, group:string, label:string, connections:string[]}} Selection */
 /** @typedef {{
  *  local?:boolean,
+ *  categoryColor:(group:string)=>string,
  *  highlight?:(matches:Match[])=>void,
  *  restore?:(view:any)=>Promise<void>,
  *  overview:()=>Summary|null,
@@ -54,6 +55,7 @@ export function startChat(context) {
     open.textContent = (match.citation ? '[' + match.citation + '] ' : '') + match.label;
     open.setAttribute('aria-label', 'Показать на карте: ' + match.label);
     category.textContent = match.group;
+    category.style.color = context.categoryColor(match.group);
     item.append(category, open);
     if (match.excerpt) {
       const excerpt = document.createElement('p');
