@@ -139,9 +139,7 @@ body {
 
 .chat-heading > div { min-width: 0; overflow-wrap: anywhere; }
 .chat-heading .chat-settings-button { margin-inline-start: auto; flex-shrink: 0; }
-.map-chat:has(.chat-options:not([hidden])) { grid-template-rows: auto auto minmax(0, 1fr) auto; }
-.chat-options:not([hidden]) { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; font-size: 12px; }
-.chat-options select, #cloud-settings input, #cloud-settings select, #cloud-settings button {
+#cloud-settings input, #cloud-settings select, #cloud-settings button {
   min-width: 0;
   padding: 8px;
   border: 1px solid #355259;
@@ -150,7 +148,6 @@ body {
   color: var(--text);
   font: inherit;
 }
-#chat-context-option:not([hidden]) { display: inline-flex; align-items: center; gap: 4px; }
 #cloud-settings {
   width: min(410px, calc(100% - 32px));
   padding: 20px;
@@ -169,3 +166,26 @@ body {
 #cloud-connect { color: var(--cyan); }
 #cloud-settings p { margin: 0; color: var(--muted); font-size: 13px; }
 #cloud-status { min-height: 1.4em; }
+
+#chat-menu { position: relative; margin-inline-start: auto; }
+#chat-menu summary { cursor: pointer; list-style: none; color: var(--cyan); padding: 7px 10px; font-size: 20px; }
+#chat-menu summary::-webkit-details-marker { display: none; }
+.chat-heading #chat-menu + .chat-settings-button { margin-inline-start: 0; }
+.chat-menu-panel {
+  position: absolute;
+  z-index: 2;
+  right: 0;
+  width: min(225px, 65vw);
+  padding: 6px;
+  border: 1px solid #355259;
+  border-radius: 8px;
+  background: #111f29;
+}
+#chat-sessions { max-height: 190px; overflow: auto; }
+.chat-menu-panel button { display: block; width: 100%; text-align: left; overflow-wrap: anywhere; }
+.chat-menu-panel button[aria-current] { background: #20333b; }
+#chat-selection { grid-column: 1 / -1; margin: 0 0 3px; color: var(--cyan); font-size: 12px; overflow-wrap: anywhere; }
+.chat-map-hit { stroke: #ffd887; stroke-width: 2.5; filter: drop-shadow(0 0 4px #dcaa50); }
+#cloud-folders { margin: 15px 0 0; border: 1px solid #355259; border-radius: 6px; }
+#cloud-folder-list { display: grid; gap: 6px; max-height: 150px; overflow: auto; margin-block: 8px; }
+#cloud-folder-list label { display: flex; gap: 6px; align-items: start; overflow-wrap: anywhere; }

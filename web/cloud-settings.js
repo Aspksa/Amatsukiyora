@@ -1,12 +1,11 @@
 // @ts-check
 
 /** @typedef {{hasKey:boolean, model:string, models?:string[]}} Settings */
-/** @typedef {{role:'user'|'assistant', content:string}} ChatMessage */
 
 const settingsUrl = '/api/cloudru/settings';
 
 /** @param {string} path @param {object} [body] */
-async function request(path, body) {
+export async function request(path, body) {
   const response = await fetch(path, body ? {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -21,12 +20,6 @@ async function request(path, body) {
   return data;
 }
 
-/** @param {ChatMessage[]} messages @param {string} mapContext */
-export async function askCloud(messages, mapContext) {
-  const data = await request('/api/cloudru/chat', { messages, mapContext });
-  return /** @type {string} */ (data.answer);
-}
-
 export function startCloudSettings() {
   const entry = /** @type {HTMLButtonElement|null} */ (document.getElementById('cloud-settings-open'));
   if (!entry) return null;
@@ -36,33 +29,16 @@ export function startCloudSettings() {
   const model = /** @type {HTMLSelectElement} */ (document.getElementById('cloud-model'));
   const connect = /** @type {HTMLButtonElement} */ (document.getElementById('cloud-connect'));
   const disconnect = /** @type {HTMLButtonElement} */ (document.getElementById('cloud-disconnect'));
-  const mode = /** @type {HTMLSelectElement} */ (document.getElementById('chat-mode'));
-  const includeContext = /** @type {HTMLInputElement} */ (document.getElementById('chat-context'));
-  const input = /** @type {HTMLInputElement} */ (document.getElementById('chat-input'));
   const status = document.getElementById('cloud-status');
-  const options = document.getElementById('cloud-chat-options');
-  const contextOption = document.getElementById('chat-context-option');
   const source = document.getElementById('chat-source');
 
   /** @type {Settings} */
   let saved = { hasKey: false, model: '' };
-  let revision = 0;
   let busy = false;
 
-  function renderMode() {
-    options.hidden = !saved.model;
-    const cloud = !!saved.model && mode.value === 'cloud';
-    contextOption.hidden = !cloud;
-    if (!cloud) includeContext.checked = false;
-    input.maxLength = cloud ? 2000 : 200;
-    input.placeholder = cloud ? 'Спросить модель…' : 'Спросить или найти…';
-    source.textContent = cloud ? saved.model : 'Локальные данные';
-  }
-
-  /** @param {Settings} settings @param {boolean} [activateCloud] */
-  function update(settings, activateCloud = false) {
+  /** @param {Settings} settings */
+  function update(settings) {
     saved = { ...saved, ...settings };
-    if (activateCloud || !saved.model) mode.value = saved.model ? 'cloud' : 'local';
     key.placeholder = saved.hasKey ? 'Ключ сохранён' : '';
     disconnect.hidden = !saved.hasKey;
     connect.textContent = saved.hasKey ? 'Обновить модели' : 'Подключить';
@@ -72,7 +48,7 @@ export function startCloudSettings() {
       model.add(new Option(name, name));
     }
     model.value = saved.model;
-    renderMode();
+    source.textContent = saved.model ? 'Авто · ' + saved.model : 'Локальные данные';
   }
 
   /** @param {() => Promise<void>} run */
@@ -103,8 +79,7 @@ export function startCloudSettings() {
     }
     void change(async () => {
       const settings = await request(settingsUrl, apiKey ? { action: 'models', apiKey } : { action: 'models' });
-      if (apiKey || settings.model !== saved.model) revision++;
-      update(settings, !!apiKey);
+      update(settings);
       key.value = '';
       status.textContent = !settings.models.length ? 'Cloud.ru не вернул доступных моделей.'
         : settings.model ? 'Cloud.ru подключён.' : 'Ключ сохранён. Выберите модель чата.';
@@ -113,6 +88,7 @@ export function startCloudSettings() {
 
   entry.addEventListener('click', () => {
     dialog.showModal();
+    renderFolders();
     if (saved.hasKey && !saved.models) loadModels(false);
   });
   document.getElementById('cloud-settings-close').addEventListener('click', () => dialog.close());
@@ -130,32 +106,59 @@ export function startCloudSettings() {
   model.addEventListener('change', () => {
     const selected = model.value;
     void change(async () => {
-      update(await request(settingsUrl, { action: 'select', model: selected }), true);
-      revision++;
+      update(await request(settingsUrl, { action: 'select', model: selected }));
       status.textContent = 'Модель сохранена. Чат подключён к Cloud.ru.';
     });
   });
   disconnect.addEventListener('click', () => {
     void change(async () => {
       update(await request(settingsUrl, { action: 'disconnect' }));
-      revision++;
       key.value = '';
       status.textContent = 'Cloud.ru отключён. Ключ удалён.';
     });
   });
-  mode.addEventListener('change', () => {
-    revision++;
-    renderMode();
+  const folderList = document.getElementById('cloud-folder-list');
+  const folderStatus = document.getElementById('cloud-folder-status');
+  const foldersUrl = '/api/map-chat/folders';
+
+  /** @param {{folders:string[], allowed:string[]}} data */
+  function fillFolders(data) {
+    folderList.replaceChildren();
+    for (const folder of data.folders) {
+      const label = document.createElement('label');
+      const toggle = document.createElement('input');
+      toggle.type = 'checkbox';
+      toggle.value = folder;
+      toggle.checked = data.allowed.includes(folder);
+      label.append(toggle, folder === '.' ? 'Все документы' : folder);
+      folderList.append(label);
+    }
+    folderStatus.textContent = data.folders.length ? '' : 'Добавьте документы и перезапустите карту.';
+  }
+
+  function renderFolders() {
+    folderList.replaceChildren();
+    folderStatus.textContent = 'Загрузка папок…';
+    void request(foldersUrl).then(fillFolders).catch(() => {
+      folderStatus.textContent = 'Не удалось загрузить папки.';
+    });
+  }
+
+  folderList.addEventListener('change', async () => {
+    const boxes = Array.from(folderList.querySelectorAll('input'));
+    boxes.forEach(box => { box.disabled = true; });
+    try {
+      fillFolders(await request(foldersUrl, {
+        action: 'folders', folders: boxes.filter(box => box.checked).map(box => box.value),
+      }));
+      folderStatus.textContent = 'Разрешения сохранены.';
+    } catch {
+      renderFolders();
+    }
   });
   entry.hidden = false;
   entry.disabled = true;
-  void request(settingsUrl).then(settings => update(settings, true)).catch(() => {}).finally(() => {
+  void request(settingsUrl).then(update).catch(() => {}).finally(() => {
     entry.disabled = false;
   });
-
-  return {
-    active: () => !!saved.model && mode.value === 'cloud',
-    revision: () => revision,
-    includeContext: () => includeContext.checked,
-  };
 }

@@ -1,10 +1,12 @@
 // @ts-check
-import { askCloud } from "./cloud-settings.js";
-/** @typedef {{id:number, group:string, label:string, excerpt?:string}} Match */
+import { request } from "./cloud-settings.js";
+/** @typedef {{id:number, group:string, label:string, excerpt?:string, citation?:number}} Match */
 /** @typedef {{memory:number, documents:number, indexed:number, links:number, routes:{source:string,target:string,count:number}[]}} Summary */
-/** @typedef {{label:string, connections:string[]}} Selection */
+/** @typedef {{id:number, group:string, label:string, connections:string[]}} Selection */
 /** @typedef {{
- *  cloud?:ReturnType<import("./cloud-settings.js").startCloudSettings>,
+ *  local?:boolean,
+ *  highlight?:(matches:Match[])=>void,
+ *  restore?:(view:any)=>Promise<void>,
  *  overview:()=>Summary|null,
  *  selection:()=>Selection|null,
  *  search:(query:string)=>Promise<Match[]>,
@@ -21,9 +23,12 @@ export function startChat(context) {
   const input = /** @type {HTMLInputElement} */ (document.getElementById('chat-input'));
   const submit = form.querySelector('button');
   let busy = false;
-  let conversationRevision = -1;
-  /** @type {import("./cloud-settings.js").ChatMessage[]} */
-  let conversation = [];
+  /** @type {number|null} */
+  let active = null;
+  const menu = /** @type {HTMLDetailsElement|null} */ (document.getElementById('chat-menu'));
+  const sessionList = document.getElementById('chat-sessions');
+  const newChat = /** @type {HTMLButtonElement|null} */ (document.getElementById('chat-new'));
+  const path = '/api/map-chat';
 
   /** @param {string} text @param {boolean} [own] */
   function message(text, own = false) {
@@ -35,8 +40,7 @@ export function startChat(context) {
     body.textContent = text;
     card.append(speaker, body);
     history.append(card);
-    if (history.childElementCount > 60) history.firstElementChild.remove();
-    history.scrollTop = history.scrollHeight;
+    if (context.local && history.childElementCount > 60) history.firstElementChild.remove();
     return { card, body, speaker };
   }
 
@@ -47,7 +51,7 @@ export function startChat(context) {
     const category = document.createElement('span');
     item.className = 'chat-result';
     open.type = 'button';
-    open.textContent = match.label;
+    open.textContent = (match.citation ? '[' + match.citation + '] ' : '') + match.label;
     open.setAttribute('aria-label', 'Показать на карте: ' + match.label);
     category.textContent = match.group;
     item.append(category, open);
@@ -100,35 +104,22 @@ export function startChat(context) {
     if (!prompt || busy) return;
     busy = true;
     submit.disabled = true;
+    if (newChat) newChat.disabled = true;
+    history.querySelector('.chat-welcome')?.remove();
     message(prompt, true);
     input.value = '';
-    const cloud = context.cloud?.active();
-    const reply = message(cloud ? 'Жду ответ модели…' : 'Ищу на карте…');
-    if (cloud) reply.speaker.textContent = 'Cloud.ru';
+    const reply = message('Ищу на карте…');
+    history.scrollTop = history.scrollHeight;
     try {
-      if (cloud) {
-        const revision = context.cloud.revision();
-        if (conversationRevision !== revision) {
-          conversation = [];
-          conversationRevision = revision;
-        }
-        /** @type {import("./cloud-settings.js").ChatMessage} */
-        const userMessage = { role: 'user', content: prompt };
-        const shareContext = context.cloud.includeContext();
-        const overview = shareContext ? context.overview() : null;
-        const selection = shareContext ? context.selection() : null;
-        const mapContext = shareContext ? JSON.stringify({
-          statistics: overview && { records: overview.memory, documents: overview.documents, links: overview.links },
-          selection,
-        }).slice(0, 2000) : '';
-        const messages = [...conversation, userMessage];
-        const answer = await askCloud(messages, mapContext);
-        reply.body.textContent = answer;
-        if (!shareContext && context.cloud.revision() === revision) {
-          /** @type {import("./cloud-settings.js").ChatMessage} */
-          const assistantMessage = { role: 'assistant', content: Array.from(answer).slice(0, 2000).join('') };
-          conversation = [...messages, assistantMessage].slice(-8);
-        }
+      if (!context.local) {
+        const selection = context.selection();
+        const data = await request(path, {
+          action: 'send', session: active, prompt,
+          selection: selection && { id: selection.id, group: selection.group },
+        });
+        const turn = data.turns[0];
+        showReply(reply, turn);
+        updateChat(data, turn.sources);
         return;
       }
       const summary = commonAnswer(prompt);
@@ -154,13 +145,72 @@ export function startChat(context) {
         : 'Совпадений по запросу «' + query + '» нет. Попробуйте короткую фразу или часть имени файла.';
       for (const match of matches) result(reply.card, match);
     } catch (error) {
-      reply.body.textContent = cloud
-        ? (error instanceof Error ? error.message : 'Cloud.ru недоступен.')
-        : 'Поиск временно недоступен. Попробуйте ещё раз.';
+      reply.body.textContent = error instanceof Error && !context.local
+        ? error.message : 'Поиск временно недоступен. Попробуйте ещё раз.';
     } finally {
       busy = false;
       submit.disabled = false;
-      history.scrollTop = reply.card.offsetTop;
+      if (newChat) newChat.disabled = false;
+      history.scrollTop = history.scrollHeight;
+    }
+  }
+
+  /** @typedef {{prompt:string, reply:string|null, mode:string|null, sources:Match[]}} Turn */
+  /** @typedef {{active:number|null, view?:any, sessions?:{id:number,title:string}[], turns:Turn[]}} Conversation */
+
+  /** @param {ReturnType<typeof message>} card @param {Turn} turn */
+  function showReply(card, turn) {
+    card.body.textContent = turn.reply || 'Запрос прервался. Вопрос сохранён.';
+    if (turn.mode === 'cloud' || turn.mode === 'grounded') card.speaker.textContent = 'Cloud.ru';
+    for (const match of turn.sources) result(card.card, match);
+  }
+
+  /** @param {Conversation} data @param {Match[]} matches */
+  function updateChat(data, matches) {
+    active = data.active;
+    context.highlight?.(matches);
+    if (data.sessions && sessionList) {
+      sessionList.replaceChildren();
+      for (const session of data.sessions) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = session.title;
+        if (session.id === active) button.setAttribute('aria-current', 'true');
+        button.addEventListener('click', () => changeChat({ action: 'open', session: session.id }));
+        sessionList.append(button);
+      }
+    }
+    history.scrollTop = history.scrollHeight;
+  }
+
+  /** @param {Conversation} data */
+  function render(data) {
+    history.replaceChildren();
+    if (!data.turns.length) {
+      message('Спросите о карте, найдите материал или выберите узел.').card.classList.add('chat-welcome');
+    }
+    for (const turn of data.turns) {
+      message(turn.prompt, true);
+      showReply(message(''), turn);
+    }
+    updateChat(data, data.turns[data.turns.length - 1]?.sources || []);
+  }
+
+  /** @param {object} action */
+  async function changeChat(action) {
+    if (busy) return;
+    busy = submit.disabled = true;
+    if (newChat) newChat.disabled = true;
+    if (menu) menu.open = false;
+    try {
+      render(await request(path, action));
+      input.value = '';
+      input.focus();
+    } catch {
+      message('Не удалось открыть беседу.');
+    } finally {
+      busy = submit.disabled = false;
+      if (newChat) newChat.disabled = false;
     }
   }
 
@@ -168,5 +218,19 @@ export function startChat(context) {
     event.preventDefault();
     void send(input.value);
   });
-  message('Спросите, что на карте, или введите фразу для поиска по записям и документам.');
+  if (context.local) {
+    message('Спросите, что на карте, или введите фразу для поиска по записям и документам.');
+    return;
+  }
+  if (menu) menu.hidden = false;
+  newChat?.addEventListener('click', () => changeChat({ action: 'new' }));
+  busy = submit.disabled = true;
+  if (newChat) newChat.disabled = true;
+  void request(path).then(async data => {
+    await context.restore?.(data.view);
+    render(data);
+  }).catch(() => message('Не удалось загрузить историю.')).finally(() => {
+    busy = submit.disabled = false;
+    if (newChat) newChat.disabled = false;
+  });
 }

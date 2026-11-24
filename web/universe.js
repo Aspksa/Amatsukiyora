@@ -1,6 +1,6 @@
 // @ts-check
 import { startChat } from "./chat.js";
-import { startCloudSettings } from "./cloud-settings.js";
+import { request as apiRequest, startCloudSettings } from "./cloud-settings.js";
 /** @typedef {{start:number, end:number, count:number}} Bin */
 /** @typedef {{name:string, count:number, bins:Bin[]}} Group */
 /** @typedef {{source:string, target:string, count:number}} Route */
@@ -21,6 +21,7 @@ const categories = [
 ];
 const get = (/** @type {string} */ id) => document.getElementById(id);
 const mapStatus = get('map-status');
+const selectionLabel = get('chat-selection');
 const format = new Intl.NumberFormat('ru-RU');
 const fmt = (/** @type {number} */ value) => format.format(value);
 const defaults = { start: 1, end: Number.MAX_SAFE_INTEGER };
@@ -163,13 +164,14 @@ function drawGroup(group, i, nodes, maximum) {
   shape('path', { d: arc(a - 28, a + 28, 472), stroke: color, 'stroke-width': .9, opacity: .25, fill: 'none' }, nodes);
 
   for (const bin of group.bins) {
+    const hit = matches.some(match => match.group === name && bin.start <= match.id && match.id <= bin.end);
     const slot = (bin.start - 1) / width;
     const openBin = () => open(name, bin.start, bin.end);
     const range = name + ' · ' + fmt(bin.count);
     const outerAngle = a + ((slot % 8) - 3.5) * 5.9 + (slot >= 8 ? 1.8 : 0);
     const outerRadius = 456 - Math.floor(slot / 8) * 24;
     const outer = point(outerAngle, outerRadius);
-    const ring = shape('circle', { cx: outer.x, cy: outer.y, r: 9.2, fill: '#0e1c24', stroke: color, 'stroke-width': 1.2, color, class: 'orbit-token' }, nodes);
+    const ring = shape('circle', { cx: outer.x, cy: outer.y, r: 9.2, fill: '#0e1c24', stroke: color, 'stroke-width': 1.2, color, class: hit ? 'orbit-token chat-map-hit' : 'orbit-token' }, nodes);
     activate(ring, 'Орбита: ' + range, openBin);
     shape('circle', { cx: outer.x, cy: outer.y, r: 5.6, fill: 'none', stroke: color, 'stroke-width': .8, opacity: .64, 'pointer-events': 'none' }, nodes);
     shape('circle', { cx: outer.x, cy: outer.y, r: 1.65, fill: color, opacity: .92, 'pointer-events': 'none' }, nodes);
@@ -184,7 +186,7 @@ function drawGroup(group, i, nodes, maximum) {
     const p = point(degrees, radius);
     const cluster = shape('g', { color, class: 'micro-cluster' }, nodes);
     activate(cluster, 'Кластер: ' + range, openBin);
-    shape('circle', { cx: p.x, cy: p.y, r: 16, fill: 'transparent', stroke: 'transparent', class: 'cluster-target' }, cluster);
+    shape('circle', { cx: p.x, cy: p.y, r: 16, fill: 'transparent', stroke: 'transparent', class: hit ? 'cluster-target chat-map-hit' : 'cluster-target' }, cluster);
     const dots = Math.max(1, Math.ceil(Math.sqrt(bin.count / maximum) * 22));
     const rows = Math.ceil(dots / 5);
     for (let dot = 0; dot < dots; dot++) {
@@ -255,18 +257,21 @@ function drawDetails() {
   categories.forEach((category, i) => {
     if (i === groupIndex) return;
     const p = point(angle(i) + 4, 435);
-    const station = shape('circle', { cx: p.x, cy: p.y, r: 8, stroke: category.color, fill: '#0b1627', 'stroke-width': 2, color: category.color }, nodes);
+    const station = shape('circle', { cx: p.x, cy: p.y, r: 8, stroke: category.color, fill: '#0b1627', 'stroke-width': 2, color: category.color,
+      class: matches.some(match => match.group === category.name) ? 'chat-map-hit' : '' }, nodes);
     activate(station, category.name, () => open(category.name));
     label(nodes, { x: p.x, y: p.y + 25 }, category.name, category.color, 15);
   });
   page.items.forEach(item => {
     const p = positions.get(item.id);
-    const highlighted = selected.has(item.id);
+    const hit = matches.some(match => match.group === focus?.name && match.id === item.id);
+    const highlighted = selected.has(item.id) || hit;
     const attrs = { fill: highlighted ? '#fff' : '#102338', stroke: color, 'stroke-width': highlighted ? 3 : 2, color };
     const node = groupIndex === 4
       ? shape('rect', { x: p.x - 5, y: p.y - 6, width: 10, height: 12, rx: 2, ...attrs }, nodes)
       : shape('circle', { cx: p.x, cy: p.y, r: highlighted ? 8 : 5.7, ...attrs }, nodes);
     node.dataset.entry = String(item.id);
+    if (hit) node.classList.add('chat-map-hit');
     activate(node, item.label, () => choose(item, node === document.activeElement));
     if (chosen === item.id) {
       node.classList.add('universe-selected');
@@ -280,6 +285,11 @@ function drawDetails() {
 }
 
 function renderMap(animate = false) {
+  if (selectionLabel) {
+    const selected = page?.items.find(item => item.id === chosen);
+    selectionLabel.hidden = !selected;
+    selectionLabel.textContent = selected ? 'Узел: ' + selected.label : '';
+  }
   svg.dataset.view = focus ? 'detail' : 'overview';
   content.replaceChildren();
   content.classList.remove('scene-content');
@@ -297,6 +307,7 @@ function renderMap(animate = false) {
 function choose(item, restoreFocus = false) {
   chosen = item.id;
   mapStatus.textContent = item.label;
+  saveView();
   renderMap();
   if (restoreFocus) {
     const node = /** @type {SVGElement|null} */ (svg.querySelector('[data-entry="' + item.id + '"]'));
@@ -316,7 +327,7 @@ function getSelection() {
     const count = edge.count - (inGroup ? onPage : 0);
     if (count > 0) connections.push(edge.group + (inGroup ? ' вне страницы' : '') + ' · ' + fmt(count));
   }
-  return { label: item.label, connections };
+  return { id: item.id, group: page.group, label: item.label, connections };
 }
 
 /** @param {string} url @param {RequestInit} [options] */
@@ -371,6 +382,7 @@ async function loadPage(target, cursor, stack, match) {
       if (loaded && fromMap && document.activeElement === document.body) svg.focus();
     }
   }
+  if (loaded && token === request) saveView();
   if (match && loaded && token === request) {
     const item = page.items.find(row => row.id === match.id);
     if (item) {
@@ -407,6 +419,7 @@ function setView(value, tx, ty) {
   x = tx;
   y = ty;
   scene.setAttribute('transform', 'translate(' + x + ' ' + y + ') scale(' + scale + ')');
+  saveView();
 }
 
 /** @param {number} factor @param {Point} p */
@@ -483,8 +496,53 @@ function getDemoMatchPage(match) {
   };
 }
 
+/** @type {Match[]} */
+let matches = [];
+let viewReady = false;
+let saveTimer = 0;
+const ready = loadOverview();
+
+function currentView() {
+  return { scale, x, y, focus, after, chosen, history };
+}
+
+function saveView() {
+  if (!viewReady || demo) return;
+  window.clearTimeout(saveTimer);
+  saveTimer = window.setTimeout(() => {
+    saveTimer = 0;
+    void apiRequest('/api/map-chat', { action: 'view', view: currentView() }).catch(() => {});
+  }, 180);
+}
+
+window.addEventListener('pagehide', () => {
+  if (!viewReady || demo || !saveTimer) return;
+  window.clearTimeout(saveTimer);
+  void fetch('/api/map-chat', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, keepalive: true,
+    body: JSON.stringify({ action: 'view', view: currentView() }),
+  }).catch(() => {});
+});
+
+if (!demo) startCloudSettings();
 startChat({
-  cloud: demo ? null : startCloudSettings(),
+  local: !!demo,
+  highlight: hits => {
+    matches = hits;
+    renderMap();
+  },
+  restore: async view => {
+    await ready;
+    if (view) {
+      if (view.focus && indexOf(view.focus.name) >= 0) {
+        await loadPage(view.focus, view.after, view.history || []);
+        const selected = page?.items.find(item => item.id === view.chosen);
+        if (selected) choose(selected);
+      }
+      setView(view.scale, view.x, view.y);
+    }
+    viewReady = true;
+  },
   overview: () => overview,
   selection: getSelection,
   search: query => {
@@ -496,14 +554,27 @@ startChat({
   },
   inspect: match => {
     if (indexOf(match.group) < 0) return Promise.resolve(false);
-    setView(1, 0, 0);
-    return loadPage({ name: match.group, start: match.id, end: match.id }, 0, [], match);
+    const index = page?.group === match.group ? page.items.findIndex(item => item.id === match.id) : -1;
+    if (index >= 0) {
+      choose(page.items[index]);
+      const row = Math.floor(index / 20);
+      const p = point(-86 + (index % 20) * 18 + row * 6, 145 + row * 70);
+      if (scale > 1) setView(scale, -p.x * scale, -p.y * scale);
+      svg.scrollIntoView({ block: 'nearest' });
+      return Promise.resolve(true);
+    }
+    return loadPage({ name: match.group, start: match.id, end: match.id }, 0, [], match).then(found => {
+      if (found) {
+        const p = point(-86, 145);
+        setView(scale, scale > 1 ? -p.x * scale : 0, scale > 1 ? -p.y * scale : 0);
+      }
+      return found;
+    });
   },
 });
 
 if (demo) get('chat-source').textContent = 'Демонстрационные данные';
 drawGrid();
 renderMap();
-void loadOverview();
 
 export {};

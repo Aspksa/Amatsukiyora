@@ -17,7 +17,7 @@ def main():
         log.parent.mkdir(parents=True, exist_ok=True)
         with log.open("w", encoding="utf-8") as f:
             f.write(f"{datetime.datetime.now().isoformat()} Python {sys.version}\n")
-        for name in ("server.py", "web/index.html", "web/style.css", "web/universe.js", "web/chat.js", "web/cloud-settings.js", "cloudru.py", "web/universe.css", "universe.py"):
+        for name in ("server.py", "web/index.html", "web/style.css", "web/universe.js", "web/chat.js", "web/cloud-settings.js", "cloudru.py", "map_chat.py", "web/universe.css", "universe.py"):
             if not (ROOT / name).is_file():
                 raise FileNotFoundError(f"Missing {name}. Extract the complete project archive.")
         import server

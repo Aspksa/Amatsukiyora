@@ -7,6 +7,7 @@ import webbrowser
 import argparse
 from urllib.parse import urlsplit, parse_qs
 import cloudru
+import map_chat
 import universe
 
 ROOT = Path(__file__).resolve().parent
@@ -15,6 +16,8 @@ DB = ROOT / "data" / "memory.db"
 DOCUMENTS = ROOT / "Aspksa" / "Документы"
 CLOUD_SETTINGS = "/api/cloudru/settings"
 CLOUD_CHAT = "/api/cloudru/chat"
+MAP_CHAT = "/api/map-chat"
+CHAT_FOLDERS = "/api/map-chat/folders"
 
 @contextmanager
 def connect():
@@ -40,6 +43,7 @@ def init():
             id INTEGER PRIMARY KEY CHECK(id = 1),
             api_key TEXT NOT NULL,
             model TEXT NOT NULL DEFAULT '')""")
+        map_chat.init(db)
 
 def add_link(source, target):
     if type(source) is not int or type(target) is not int or source == target:
@@ -132,6 +136,13 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
     def do_GET(self):
         url = urlsplit(self.path)
+        if url.path in (MAP_CHAT, CHAT_FOLDERS):
+            if self.headers.get("Host") != f"127.0.0.1:{self.server.server_port}":
+                return self.reply(403, {"error": "host"})
+            with connect() as db:
+                db.execute("BEGIN")
+                result = map_chat.conversations(db) if url.path == MAP_CHAT else map_chat.document_folders(db)
+            return self.reply(200, result)
         if url.path == CLOUD_SETTINGS:
             if self.headers.get("Host") != f"127.0.0.1:{self.server.server_port}":
                 return self.reply(403, {"error": "host"})
@@ -164,22 +175,31 @@ class Handler(SimpleHTTPRequestHandler):
             rows = db.execute("SELECT id,category,label FROM memory ORDER BY id DESC LIMIT 4800").fetchall()
         self.reply(200, [dict(row) for row in rows])
     def do_POST(self):
-        if self.path not in ("/api/memory", "/api/links", "/api/universe/scan", "/api/universe/document-link", CLOUD_SETTINGS, CLOUD_CHAT):
+        if self.path not in ("/api/memory", "/api/links", "/api/universe/scan", "/api/universe/document-link", CLOUD_SETTINGS, CLOUD_CHAT, MAP_CHAT, CHAT_FOLDERS):
             return self.reply(404, {"error":"not found"})
         if self.headers.get("Origin") != f"http://127.0.0.1:{self.server.server_port}":
             return self.reply(403, {"error":"origin"})
-        cloud_request = self.path in (CLOUD_SETTINGS, CLOUD_CHAT)
+        cloud_request = self.path in (CLOUD_SETTINGS, CLOUD_CHAT, MAP_CHAT, CHAT_FOLDERS)
         if cloud_request and self.headers.get("Host") != f"127.0.0.1:{self.server.server_port}":
             return self.reply(403, {"error": "host"})
         try:
             length = int(self.headers.get("Content-Length", "0"))
-            if not 0 < length <= (131072 if self.path == CLOUD_CHAT else 4096) or self.headers.get_content_type() != "application/json":
+            if not 0 < length <= (131072 if self.path in (CLOUD_CHAT, MAP_CHAT, CHAT_FOLDERS) else 4096) or self.headers.get_content_type() != "application/json":
                 raise ValueError()
             data = json.loads(self.rfile.read(length))
             if cloud_request:
                 if not isinstance(data, dict):
                     raise ValueError()
-                result = cloud_chat(data) if self.path == CLOUD_CHAT else update_cloud_settings(data)
+                if self.path == MAP_CHAT and data.get("action") == "send":
+                    result = map_chat.answer(connect, cloud_settings, data)
+                elif self.path in (MAP_CHAT, CHAT_FOLDERS):
+                    if (self.path == CHAT_FOLDERS) != (data.get("action") == "folders"):
+                        raise ValueError()
+                    with connect() as db:
+                        db.execute("BEGIN IMMEDIATE")
+                        result = map_chat.update_preferences(db, data)
+                else:
+                    result = cloud_chat(data) if self.path == CLOUD_CHAT else update_cloud_settings(data)
                 return self.reply(200, result)
             if self.path == "/api/universe/scan":
                 with connect() as db:

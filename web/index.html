@@ -28,20 +28,20 @@
         <circle cx="16" cy="16" r="13"/><ellipse cx="16" cy="16" rx="7.5" ry="13" transform="rotate(42 16 16)"/><circle cx="16" cy="16" r="2.4"/>
       </svg>
       <div><h1 id="chat-title">Чат карты</h1><span id="chat-source">Локальные данные</span></div>
+      <details id="chat-menu" hidden>
+        <summary aria-label="Меню чата">⋯</summary>
+        <div class="chat-menu-panel">
+          <button id="chat-new" type="button">Новый чат</button>
+          <div id="chat-sessions" aria-label="История бесед"></div>
+        </div>
+      </details>
       <button id="cloud-settings-open" class="chat-settings-button" type="button" aria-haspopup="dialog" hidden>⚙️ Настройки</button>
-    </div>
-    <div class="chat-options" id="cloud-chat-options" hidden>
-      <label for="chat-mode">Режим</label>
-      <select id="chat-mode">
-        <option value="local">Локальный поиск</option>
-        <option value="cloud">Cloud.ru</option>
-      </select>
-      <label id="chat-context-option" hidden><input id="chat-context" type="checkbox"> Передать контекст карты</label>
     </div>
     <div id="chat-history" class="chat-history" role="log" aria-label="Сообщения чата" tabindex="0"></div>
     <form id="chat-form" class="chat-form">
+      <p id="chat-selection" hidden></p>
       <label class="sr-only" for="chat-input">Вопрос или поисковая фраза</label>
-      <input id="chat-input" type="text" maxlength="200" placeholder="Спросить или найти…" required>
+      <input id="chat-input" type="text" maxlength="2000" placeholder="Спросить или найти…" required>
       <button type="submit">Отправить</button>
     </form>
   </aside>
@@ -63,6 +63,12 @@
     <select id="cloud-model" disabled><option value="">Выберите модель</option></select>
     <p id="cloud-status" role="status"></p>
   </form>
+  <fieldset id="cloud-folders">
+    <legend>Фрагменты документов для Cloud.ru</legend>
+    <p>Выберите папки, из которых чат может автоматически отправлять названия и фрагменты документов, включая вложенные папки. Названия подходящих записей карты могут попасть в ответ модели.</p>
+    <div id="cloud-folder-list"></div>
+    <p id="cloud-folder-status" role="status"></p>
+  </fieldset>
 </dialog>
 <script type="module" src="universe.js"></script>
 </body>
