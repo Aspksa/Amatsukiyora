@@ -46,6 +46,22 @@ class UniverseTest(unittest.TestCase):
             self.assertEqual(universe.scan(db,self.root)["seen"],1000)
             self.assertEqual(universe.overview(db)["links"],5000)
 
+    def test_chat_search_returns_local_matches_and_excerpts(self):
+        document = self.root / "atlas.txt"
+        document.write_text("Straße. Орбита проходит через центр.", encoding="utf-8")
+        (self.root / "Карта.pdf").touch()
+        with server.connect() as db:
+            db.execute("INSERT INTO memory(category,label) VALUES (?,?)", ("Знания", "Орбита Земли"))
+            universe.scan(db, self.root)
+            memory, file = universe.chat_search(db, "ОРБИТА")
+            self.assertEqual(memory["group"], "Знания")
+            self.assertEqual(file["group"], "Документы")
+            self.assertIn("Орбита проходит через центр.", file["excerpt"])
+            self.assertEqual(universe.chat_search(db, "карта")[0]["label"], "Карта.pdf")
+            document.unlink()
+            universe.scan(db, self.root)
+            self.assertEqual(universe.chat_search(db, "орбита"), [memory])
+
     def test_rescan_preserves_identity(self):
         p=self.root/"sample.txt"
         p.write_text("hello",encoding="utf-8")

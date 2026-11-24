@@ -1,25 +1,25 @@
 // @ts-check
+import { startChat } from "./chat.js";
 /** @typedef {{start:number, end:number, count:number}} Bin */
 /** @typedef {{name:string, count:number, bins:Bin[]}} Group */
 /** @typedef {{source:string, target:string, count:number}} Route */
 /** @typedef {{memory:number, documents:number, indexed:number, links:number, groups:Group[], routes:Route[]}} Overview */
 /** @typedef {{id:number, label:string, size?:number, indexed?:boolean}} Item */
+/** @typedef {{id:number, group:string, label:string, excerpt?:string}} Match */
 /** @typedef {{group:string, items:Item[], links:{source:number,target:number}[], external:{id:number,group:string,count:number}[], next:number|null}} Page */
 /** @typedef {{name:string, start:number, end:number}} Focus */
 /** @typedef {{x:number,y:number}} Point */
 
 const svg = /** @type {SVGSVGElement} */ (document.querySelector('#universe'));
 const categories = [
-  { name: 'Знания', color: '#65baff' },
-  { name: 'Навыки', color: '#62ebd3' },
-  { name: 'Опыт', color: '#ffc276' },
-  { name: 'Личность', color: '#ba9aff' },
-  { name: 'Документы', color: '#8cdda2' },
+  { name: 'Знания', color: '#82b7db' },
+  { name: 'Навыки', color: '#71d8cd' },
+  { name: 'Опыт', color: '#dcac75' },
+  { name: 'Личность', color: '#ad9ad2' },
+  { name: 'Документы', color: '#8bc8ad' },
 ];
 const get = (/** @type {string} */ id) => document.getElementById(id);
-const button = (/** @type {string} */ id) => /** @type {HTMLButtonElement} */ (get(id));
-const back = button('back'), prev = button('prev'), next = button('next'), refresh = button('refresh');
-const detail = get('detail'), title = get('detail-title'), entries = get('entries'), legend = get('legend');
+const mapStatus = get('map-status');
 const format = new Intl.NumberFormat('ru-RU');
 const fmt = (/** @type {number} */ value) => format.format(value);
 const defaults = { start: 1, end: Number.MAX_SAFE_INTEGER };
@@ -30,9 +30,8 @@ const demo = /** @type {{overview:Overview, pages:Record<string,Page>}|null} */ 
 /** @type {Page|null} */ let page = null;
 /** @type {Focus|null} */ let focus = null;
 /** @type {number[]} */ let history = [];
-let after = 0, chosen = 0, request = 0, pending = false, mode = 'all';
+let after = 0, chosen = 0, request = 0, pending = false;
 let scale = 1, x = 0, y = 0;
-
 /** @template {keyof SVGElementTagNameMap} K
  * @param {K} tag @param {Record<string,string|number>} attrs @param {SVGElement} parent
  * @returns {SVGElementTagNameMap[K]} */
@@ -109,97 +108,123 @@ function drawRoute(parent, d, color, count, animated = false) {
 }
 
 function drawGrid() {
-  for (const r of [86, 113, 154, 198, 245, 292, 341, 394, 445, 495]) {
-    shape('circle', { r, fill: 'none', stroke: '#506281', 'stroke-width': r === 394 ? 1.3 : .8, opacity: r === 394 ? .6 : .31 }, grid);
+  shape('circle', { r: 497, fill: 'url(#orbit-nebula)' }, grid);
+  for (const r of [99, 132, 179, 213, 249, 291, 334, 374, 421, 452, 486, 500]) {
+    shape('circle', { r, fill: 'none', stroke: '#6e9aa6', 'stroke-width': r === 500 ? 1.1 : .73, opacity: r >= 421 ? .23 : .12 }, grid);
   }
-  for (let i = 0; i < 120; i++) {
-    const a = i * 3;
-    const p = point(a, i % 6 ? 488 : 478), q = point(a, 495);
-    shape('line', { x1: p.x, y1: p.y, x2: q.x, y2: q.y, stroke: '#879cbd', opacity: i % 6 ? .24 : .54 }, grid);
-    if (i % 6 === 0) {
-      const inner = point(a, 98), outer = point(a, 473);
-      shape('line', { x1: inner.x, y1: inner.y, x2: outer.x, y2: outer.y, stroke: '#4b6686', opacity: .18 }, grid);
-    }
+  for (let i = 0; i < 96; i++) {
+    const a = i * 3.75;
+    const p = point(a, i % 4 ? 496 : 490), q = point(a, 501);
+    shape('line', { x1: p.x, y1: p.y, x2: q.x, y2: q.y, stroke: '#6a98a6', opacity: i % 4 ? .15 : .33 }, grid);
   }
-  for (let i = 0; i < 170; i++) {
-    const p = point(i * 137.508, 106 + (i * 641 % 376));
-    shape('circle', { cx: p.x, cy: p.y, r: i % 13 === 0 ? 1.45 : .75, fill: '#a4c6ed', opacity: i % 13 === 0 ? .53 : .27 }, grid);
+  for (let i = 0; i < 115; i++) {
+    const p = point(i * 137.508, 110 + (i * 641 % 377));
+    shape('circle', { cx: p.x, cy: p.y, r: i % 17 === 0 ? 1.55 : .65, fill: '#a6c8d5', opacity: i % 17 === 0 ? .38 : .19 }, grid);
   }
+  const scanner = shape('g', { class: 'orbit-scanner' }, grid);
+  shape('path', { d: arc(-128, -92, 500), stroke: '#79c9c8', 'stroke-width': 1.2, opacity: .38, fill: 'none' }, scanner);
+  const scan = point(-92, 500);
+  shape('circle', { cx: scan.x, cy: scan.y, r: 2, fill: '#a8e4dd', opacity: .72 }, scanner);
 }
 
 /** @param {SVGElement} parent */
 function drawCore(parent) {
-  shape('circle', { r: 75, fill: 'none', stroke: '#63e5df', 'stroke-width': 1, opacity: .6, class: 'core-aura' }, parent);
-  shape('circle', { r: 63, fill: 'url(#core-light)', stroke: '#63e5df', 'stroke-width': 1.7, color: '#63e5df' }, parent);
-  shape('circle', { r: 57, fill: 'none', stroke: '#63e5df', opacity: .32 }, parent);
+  for (let i = 0; i < 2; i++) {
+    shape('circle', { r: 78, fill: 'none', stroke: '#64ebe8', 'stroke-width': 1.3, class: 'core-wave', style: 'animation-delay:' + i * -2.9 + 's' }, parent);
+  }
+  shape('circle', { r: 75, fill: 'none', stroke: '#69c5bf', 'stroke-width': 1, opacity: .52, class: 'core-aura' }, parent);
+  const nucleus = shape('circle', { r: 63, fill: 'url(#core-light)', stroke: '#63e5df', 'stroke-width': 1.7, color: '#63e5df' }, parent);
+  if (focus) activate(nucleus, 'Общий вид', () => {
+    openOverview();
+    svg.focus();
+  });
+  shape('circle', { r: 57, fill: 'none', stroke: '#63e5df', opacity: .32, 'pointer-events': 'none' }, parent);
+  const rotor = shape('g', { class: 'core-rotor', 'aria-hidden': 'true' }, parent);
+  for (const degrees of [-92, 28, 148]) {
+    shape('path', { d: arc(degrees, degrees + 36, 76), stroke: '#6ff5eb', 'stroke-width': 2, 'stroke-linecap': 'round', fill: 'none', opacity: .8 }, rotor);
+    const p = point(degrees + 36, 76);
+    shape('circle', { cx: p.x, cy: p.y, r: 2.2, fill: '#f2ffff' }, rotor);
+  }
   const count = focus ? page?.items.length || 0 : (overview?.memory || 0) + (overview?.documents || 0);
   label(parent, { x: 0, y: -19 }, focus?.name || 'Ядро', '#b7e7ec', 16);
   label(parent, { x: 0, y: 13 }, fmt(count), '#f4feff', 32);
-  label(parent, { x: 0, y: 35 }, focus ? 'на странице' : 'записей и файлов', '#adc4d9', 12);
+  label(parent, { x: 0, y: 35 }, focus ? 'Общий вид' : 'записей и файлов', '#adc4d9', 12);
 }
 
-/** @param {Group} group @param {number} i @param {SVGElement} bars @param {SVGElement} nodes @param {number} maximum */
-function drawGroup(group, i, bars, nodes, maximum) {
+/** @param {Group} group @param {number} i @param {SVGElement} nodes @param {number} maximum */
+function drawGroup(group, i, nodes, maximum) {
   const { color, name } = categories[i];
   const a = angle(i);
-  const showBars = mode === 'all' || mode === 'stats';
-  const showClusters = mode !== 'stats' && mode !== 'links';
-  shape('path', { d: arc(a - 31, a + 31, 395), stroke: color, 'stroke-width': 2.4, opacity: .65, fill: 'none' }, bars);
-  if (showBars) {
-    const width = group.bins[0] ? group.bins[0].end - group.bins[0].start + 1 : 1;
-    const bySlot = new Map(group.bins.map(bin => [(bin.start - 1) / width, bin]));
-    for (let slot = 0; slot < 16; slot++) {
-      const bin = bySlot.get(slot);
-      const degrees = a + (slot - 7.5) * 3.65;
-      const start = point(degrees, 403);
-      const length = bin ? 9 + 62 * Math.sqrt(bin.count / maximum) : 4;
-      const end = point(degrees, 403 + length);
-      const bar = shape('line', { x1: start.x, y1: start.y, x2: end.x, y2: end.y, stroke: color, 'stroke-width': bin ? 6 : 2, opacity: bin ? .9 : .23, color }, bars);
-      if (bin) activate(bar, name + ' · ' + fmt(bin.count), () => open(name, bin.start, bin.end));
+  const width = group.bins[0] ? group.bins[0].end - group.bins[0].start + 1 : 1;
+  const hub = point(a, 137);
+  const caption = point(a, 333);
+  label(nodes, caption, name + '  ' + fmt(group.count), color, 15);
+  shape('path', { d: arc(a - 28, a + 28, 472), stroke: color, 'stroke-width': .9, opacity: .25, fill: 'none' }, nodes);
+
+  for (const bin of group.bins) {
+    const slot = (bin.start - 1) / width;
+    const openBin = () => open(name, bin.start, bin.end);
+    const range = name + ' · ' + fmt(bin.count);
+    const outerAngle = a + ((slot % 8) - 3.5) * 5.9 + (slot >= 8 ? 1.8 : 0);
+    const outerRadius = 456 - Math.floor(slot / 8) * 24;
+    const outer = point(outerAngle, outerRadius);
+    const ring = shape('circle', { cx: outer.x, cy: outer.y, r: 9.2, fill: '#0e1c24', stroke: color, 'stroke-width': 1.2, color, class: 'orbit-token' }, nodes);
+    activate(ring, 'Орбита: ' + range, openBin);
+    shape('circle', { cx: outer.x, cy: outer.y, r: 5.6, fill: 'none', stroke: color, 'stroke-width': .8, opacity: .64, 'pointer-events': 'none' }, nodes);
+    shape('circle', { cx: outer.x, cy: outer.y, r: 1.65, fill: color, opacity: .92, 'pointer-events': 'none' }, nodes);
+    if (slot < 8 && bin.count > maximum * .24) {
+      const satellite = point(outerAngle - 1.9, 477);
+      shape('circle', { cx: satellite.x, cy: satellite.y, r: 5.2, fill: '#0d1b23', stroke: color, 'stroke-width': .9, opacity: .64 }, nodes);
+      shape('circle', { cx: satellite.x, cy: satellite.y, r: 1.25, fill: color, opacity: .71 }, nodes);
+    }
+
+    const degrees = a + ((slot % 4) - 1.5) * 11.5;
+    const radius = 168 + Math.floor(slot / 4) * 35;
+    const p = point(degrees, radius);
+    const cluster = shape('g', { color, class: 'micro-cluster' }, nodes);
+    activate(cluster, 'Кластер: ' + range, openBin);
+    shape('circle', { cx: p.x, cy: p.y, r: 16, fill: 'transparent', stroke: 'transparent', class: 'cluster-target' }, cluster);
+    const dots = Math.max(1, Math.ceil(Math.sqrt(bin.count / maximum) * 22));
+    const rows = Math.ceil(dots / 5);
+    for (let dot = 0; dot < dots; dot++) {
+      const dotAngle = degrees + (dot % 5 - 2) * (280 / radius);
+      const q = point(dotAngle, radius + (Math.floor(dot / 5) - (rows - 1) / 2) * 5.1);
+      const signal = (slot * 7 + dot * 3 + i) % 13 === 0;
+      shape('circle', { cx: q.x, cy: q.y, r: signal ? 2.05 : 1.55, fill: color, opacity: signal ? .95 : .64, class: signal ? 'cluster-signal' : '', 'pointer-events': 'none' }, cluster);
+    }
+    if (slot % 3 === 0) {
+      const d = 'M ' + xy(p) + ' Q ' + xy(point(degrees, 313)) + ' ' + xy(outer);
+      shape('path', { d, fill: 'none', stroke: color, 'stroke-width': .65, opacity: .17, 'pointer-events': 'none' }, nodes);
     }
   }
-  if (showClusters) {
-    group.bins.forEach(bin => {
-      const slot = (bin.start - 1) / (bin.end - bin.start + 1);
-      const degrees = a + ((slot % 4) - 1.5) * 11;
-      const p = point(degrees, 222 + Math.floor(slot / 4) * 37);
-      const origin = point(a, 154);
-      shape('path', { d: 'M ' + xy(origin) + ' L ' + xy(point(degrees, 198)) + ' L ' + xy(p), fill: 'none', stroke: color, opacity: .24 }, nodes);
-      const dot = shape('circle', { cx: p.x, cy: p.y, r: 4 + Math.min(5, Math.log2(bin.count + 1)), fill: '#102338', stroke: color, 'stroke-width': 2, color }, nodes);
-      activate(dot, name + ' · ' + fmt(bin.count), () => open(name, bin.start, bin.end));
-    });
-  }
-  const hub = point(a, 154);
-  const node = shape('circle', { cx: hub.x, cy: hub.y, r: 11, fill: '#0b1627', stroke: color, 'stroke-width': 3, color }, nodes);
+  const node = shape('circle', { cx: hub.x, cy: hub.y, r: 9, fill: '#0d1a22', stroke: color, 'stroke-width': 1.6, color }, nodes);
   activate(node, name + ' · ' + fmt(group.count), () => open(name));
-  shape('circle', { cx: hub.x, cy: hub.y, r: 3, fill: color, 'pointer-events': 'none' }, nodes);
-  const radial = point(a, 502);
-  label(nodes, radial, name + '  ' + fmt(group.count), color, 16);
+  shape('circle', { cx: hub.x, cy: hub.y, r: 3.3, fill: color, 'pointer-events': 'none' }, nodes);
 }
 
 function drawOverview() {
   if (!overview) return;
-  const bars = shape('g', {}, content), routes = shape('g', {}, content), nodes = shape('g', {}, content);
+  const routes = shape('g', {}, content), nodes = shape('g', {}, content);
   const maximum = Math.max(1, ...overview.groups.flatMap(group => group.bins.map(bin => bin.count)));
-  if (mode === 'all' || mode === 'links') {
-    overview.routes.forEach((route, i) => {
-      const from = indexOf(route.source), to = indexOf(route.target);
-      if (from < 0 || to < 0) return;
-      const a = angle(from), b = angle(to);
-      const hub = point(a, 154);
-      const distance = Math.min(Math.abs(from - to), 5 - Math.abs(from - to));
-      const radius = distance === 1 ? 246 + i % 5 * 24 : 98 + i % 5 * 10;
-      const d = from === to
-        ? 'M ' + xy(hub) + ' Q ' + xy(point(a - 16, 207)) + ' ' + xy(point(a, 209)) +
-          ' Q ' + xy(point(a + 16, 207)) + ' ' + xy(hub)
-        : track(a, b, 154, 154, radius);
-      drawRoute(routes, d, categories[from].color, route.count, true);
-    });
-  }
+  overview.routes.forEach((route, i) => {
+    const from = indexOf(route.source), to = indexOf(route.target);
+    if (from < 0 || to < 0) return;
+    const a = angle(from), b = angle(to);
+    const hub = point(a, 137);
+    const distance = Math.min(Math.abs(from - to), 5 - Math.abs(from - to));
+    const radius = distance === 1 ? 246 + i % 5 * 24 : 98 + i % 5 * 10;
+    const d = from === to
+      ? 'M ' + xy(hub) + ' Q ' + xy(point(a - 18, 180)) + ' ' + xy(point(a, 187)) +
+        ' Q ' + xy(point(a + 18, 180)) + ' ' + xy(hub)
+      : track(a, b, 137, 137, radius);
+    const lane = shape('g', {}, routes);
+    shape('title', {}, lane).textContent = route.source + ' / ' + route.target + ' · ' + fmt(route.count);
+    drawRoute(lane, d, categories[from].color, route.count, true);
+  });
   for (const group of overview.groups) {
     const i = indexOf(group.name);
-    if (i < 0 || mode === 'documents' && i !== 4 || mode === 'memory' && i === 4) continue;
-    drawGroup(group, i, bars, nodes, maximum);
+    if (i < 0) continue;
+    drawGroup(group, i, nodes, maximum);
   }
 }
 
@@ -214,27 +239,25 @@ function drawDetails() {
     return [item.id, { a, r, ...point(a, r) }];
   }));
   const selected = new Set([chosen]);
-  if (mode !== 'memory' && mode !== 'stats') {
-    page.links.forEach((link, i) => {
-      const from = positions.get(link.source), to = positions.get(link.target);
-      const active = link.source === chosen || link.target === chosen;
-      if (active) selected.add(link.source).add(link.target);
-      drawRoute(routes, track(from.a, to.a, from.r, to.r, Math.max(from.r, to.r) + 16 + i % 4 * 5), color, active ? 12 : 1, active);
-    });
-    page.external.forEach(edge => {
-      const i = indexOf(edge.group);
-      if (i < 0 || i === groupIndex) return;
-      const p = positions.get(edge.id);
-      drawRoute(routes, track(p.a, angle(i) + 4, p.r, 435, 374 + i * 9), categories[i].color, edge.count, edge.id === chosen);
-    });
-    categories.forEach((category, i) => {
-      if (i === groupIndex) return;
-      const p = point(angle(i) + 4, 435);
-      const station = shape('circle', { cx: p.x, cy: p.y, r: 8, stroke: category.color, fill: '#0b1627', 'stroke-width': 2, color: category.color }, nodes);
-      activate(station, category.name, () => open(category.name));
-      label(nodes, { x: p.x, y: p.y + 25 }, category.name, category.color, 15);
-    });
-  }
+  page.links.forEach((link, i) => {
+    const from = positions.get(link.source), to = positions.get(link.target);
+    const active = link.source === chosen || link.target === chosen;
+    if (active) selected.add(link.source).add(link.target);
+    drawRoute(routes, track(from.a, to.a, from.r, to.r, Math.max(from.r, to.r) + 16 + i % 4 * 5), color, active ? 12 : 1, active);
+  });
+  page.external.forEach(edge => {
+    const i = indexOf(edge.group);
+    if (i < 0 || i === groupIndex) return;
+    const p = positions.get(edge.id);
+    drawRoute(routes, track(p.a, angle(i) + 4, p.r, 435, 374 + i * 9), categories[i].color, edge.count, edge.id === chosen);
+  });
+  categories.forEach((category, i) => {
+    if (i === groupIndex) return;
+    const p = point(angle(i) + 4, 435);
+    const station = shape('circle', { cx: p.x, cy: p.y, r: 8, stroke: category.color, fill: '#0b1627', 'stroke-width': 2, color: category.color }, nodes);
+    activate(station, category.name, () => open(category.name));
+    label(nodes, { x: p.x, y: p.y + 25 }, category.name, category.color, 15);
+  });
   page.items.forEach(item => {
     const p = positions.get(item.id);
     const highlighted = selected.has(item.id);
@@ -244,7 +267,10 @@ function drawDetails() {
       : shape('circle', { cx: p.x, cy: p.y, r: highlighted ? 8 : 5.7, ...attrs }, nodes);
     node.dataset.entry = String(item.id);
     activate(node, item.label, () => choose(item, node === document.activeElement));
-    if (chosen === item.id) node.classList.add('universe-selected');
+    if (chosen === item.id) {
+      node.classList.add('universe-selected');
+      shape('circle', { cx: p.x, cy: p.y, r: 16, fill: 'none', stroke: color, 'stroke-width': 1.5, opacity: .8, class: 'selection-ring', 'pointer-events': 'none' }, nodes);
+    }
     if (page.items.length <= 16 || highlighted) {
       const name = item.label.length > 22 ? item.label.slice(0, 21) + '…' : item.label;
       label(nodes, { x: p.x, y: p.y - 14 }, name, color, 14);
@@ -253,11 +279,13 @@ function drawDetails() {
 }
 
 function renderMap(animate = false) {
+  svg.dataset.view = focus ? 'detail' : 'overview';
   content.replaceChildren();
   content.classList.remove('scene-content');
   if (focus) drawDetails();
   else drawOverview();
   drawCore(content);
+  if (focus) drawPaging(content);
   if (animate) {
     content.getBoundingClientRect();
     content.classList.add('scene-content');
@@ -267,12 +295,7 @@ function renderMap(animate = false) {
 /** @param {Item} item @param {boolean} [restoreFocus] */
 function choose(item, restoreFocus = false) {
   chosen = item.id;
-  detail.textContent = item.label + (focus?.name === 'Документы'
-    ? ' · ' + fmt(item.size || 0) + ' байт · ' + (item.indexed ? 'текст проиндексирован' : 'метаданные')
-    : '');
-  for (const row of entries.querySelectorAll('button')) {
-    row.setAttribute('aria-pressed', String(row.dataset.entry === String(item.id)));
-  }
+  mapStatus.textContent = item.label;
   renderMap();
   if (restoreFocus) {
     const node = /** @type {SVGElement|null} */ (svg.querySelector('[data-entry="' + item.id + '"]'));
@@ -280,34 +303,19 @@ function choose(item, restoreFocus = false) {
   }
 }
 
-/** @param {boolean} [animate] */
-function render(animate = false) {
-  renderMap(animate);
-  title.textContent = focus?.name || 'Обзор';
-  get('map-title').textContent = focus?.name || 'Карта знаний';
-  legend.querySelectorAll('button').forEach(row => {
-    const group = overview?.groups.find(group => group.name === row.dataset.group);
-    row.setAttribute('aria-pressed', String(row.dataset.group === focus?.name));
-    row.querySelector('strong').textContent = group ? fmt(group.count) : '—';
-  });
-  for (const [id, value] of [
-    ['memory-count', overview?.memory], ['document-count', overview?.documents], ['link-count', overview?.links],
-  ]) {
-    if (typeof id === 'string') get(id).textContent = typeof value === 'number' ? fmt(value) : '—';
+function getSelection() {
+  const item = page?.items.find(value => value.id === chosen);
+  if (!item) return null;
+  const connections = [];
+  const onPage = page.links.filter(link => link.source === chosen || link.target === chosen).length;
+  if (onPage) connections.push('На странице · ' + fmt(onPage));
+  for (const edge of page.external) {
+    if (edge.id !== chosen) continue;
+    const inGroup = edge.group === focus?.name;
+    const count = edge.count - (inGroup ? onPage : 0);
+    if (count > 0) connections.push(edge.group + (inGroup ? ' вне страницы' : '') + ' · ' + fmt(count));
   }
-  back.hidden = !focus;
-  prev.hidden = !focus || !history.length;
-  next.hidden = !focus || !page?.next;
-  prev.disabled = next.disabled = pending;
-  entries.replaceChildren();
-  for (const item of page?.items || []) {
-    const row = document.createElement('button');
-    row.textContent = item.label;
-    row.dataset.entry = String(item.id);
-    row.setAttribute('aria-pressed', 'false');
-    row.addEventListener('click', () => choose(item));
-    entries.append(row);
-  }
+  return { label: item.label, connections };
 }
 
 /** @param {string} url @param {RequestInit} [options] */
@@ -323,27 +331,27 @@ async function loadOverview() {
     const result = demo?.overview || await fetchData('/api/universe');
     if (token !== request) return;
     overview = result;
-    get('status').textContent = demo ? 'Демонстрационные данные' : 'Локальные данные';
-    if (!focus) detail.textContent = result.memory || result.documents
-      ? 'Выберите категорию или кластер на карте.'
-      : 'Карта пока пуста. Добавьте файлы в Aspksa/Документы и обновите документы.';
-    render(true);
+    mapStatus.textContent = result.memory || result.documents
+      ? 'Карта загружена.'
+      : 'Карта пока пуста. Добавьте файлы в Aspksa/Документы.';
+    renderMap(true);
   } catch {
-    if (token === request) get('status').textContent = 'Не удалось загрузить карту';
+    if (token === request) mapStatus.textContent = 'Не удалось загрузить карту';
   }
 }
 
-/** @param {Focus} target @param {number} cursor @param {number[]} stack */
-async function loadPage(target, cursor, stack) {
+/** @param {Focus} target @param {number} cursor @param {number[]} stack @param {Match} [match] */
+async function loadPage(target, cursor, stack, match) {
   const token = ++request;
   const fromMap = svg.contains(document.activeElement);
   let loaded = false;
   pending = true;
-  prev.disabled = next.disabled = true;
-  detail.textContent = 'Загрузка…';
+  mapStatus.textContent = 'Загрузка…';
   const q = new URLSearchParams({ group: target.name, after: String(cursor), start: String(target.start), end: String(target.end) });
   try {
-    const result = demo ? demo.pages[q.toString()] : await fetchData('/api/universe/page?' + q);
+    const result = demo
+      ? match ? getDemoMatchPage(match) : demo.pages[q.toString()]
+      : await fetchData('/api/universe/page?' + q);
     if (token !== request) return;
     if (!result) throw Error('Missing page');
     loaded = true;
@@ -352,16 +360,25 @@ async function loadPage(target, cursor, stack) {
     after = cursor;
     history = stack;
     chosen = 0;
-    detail.textContent = page.items.length ? fmt(page.items.length) + ' элементов на странице' : 'В этой категории пока нет записей.';
+    mapStatus.textContent = page.items.length ? fmt(page.items.length) + ' элементов на странице' : 'В этой категории пока нет записей.';
   } catch {
-    if (token === request) detail.textContent = 'Не удалось загрузить записи.';
+    if (token === request) mapStatus.textContent = 'Не удалось загрузить записи.';
   } finally {
     if (token === request) {
       pending = false;
-      render(true);
-      if (loaded && fromMap && document.activeElement === document.body) get('map-title').focus();
+      renderMap(true);
+      if (loaded && fromMap && document.activeElement === document.body) svg.focus();
     }
   }
+  if (match && loaded && token === request) {
+    const item = page.items.find(row => row.id === match.id);
+    if (item) {
+      choose(item);
+      svg.scrollIntoView({ block: 'nearest' });
+      return true;
+    }
+  }
+  return false;
 }
 
 /** @param {string} name @param {number} [start] @param {number} [end] */
@@ -370,18 +387,17 @@ function open(name, start = defaults.start, end = defaults.end) {
   void loadPage({ name, start, end }, 0, []);
 }
 
-/** @param {boolean} [retry] */
-function openOverview(retry = true) {
+function openOverview() {
   request++;
   pending = false;
   focus = null;
   page = null;
   history = [];
   chosen = 0;
-  detail.textContent = 'Выберите категорию или кластер на карте.';
+  mapStatus.textContent = 'Общий вид карты.';
   setView(1, 0, 0);
-  render(true);
-  if (retry && !overview) void loadOverview();
+  renderMap(true);
+  if (!overview) void loadOverview();
 }
 
 /** @param {number} value @param {number} tx @param {number} ty */
@@ -398,31 +414,28 @@ function zoom(factor, p) {
   setView(value, p.x - (p.x - x) * value / scale, p.y - (p.y - y) * value / scale);
 }
 
-back.addEventListener('click', () => openOverview());
-next.addEventListener('click', () => {
-  if (focus && page?.next && !pending) void loadPage(focus, page.next, [...history, after]);
-});
-prev.addEventListener('click', () => {
-  if (focus && history.length && !pending) void loadPage(focus, history[history.length - 1], history.slice(0, -1));
-});
-document.querySelectorAll('[data-mode]').forEach(control => control.addEventListener('click', () => {
-  mode = control.getAttribute('data-mode');
-  document.querySelectorAll('[data-mode]').forEach(row => row.setAttribute('aria-pressed', String(row === control)));
-  openOverview();
-}));
-refresh.hidden = !!demo;
-refresh.addEventListener('click', async () => {
-  refresh.disabled = true;
-  try {
-    const scan = await fetchData('/api/universe/scan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-    openOverview(false);
-    await loadOverview();
-    if (scan.errors) detail.textContent = 'Часть файлов недоступна: ' + scan.errors;
-  } catch {
-    detail.textContent = 'Не удалось обновить документы.';
-  } finally {
-    refresh.disabled = false;
+/** @param {SVGElement} parent */
+function drawPaging(parent) {
+  const group = shape('g', { class: 'map-paging' }, parent);
+  const controls = [
+    { x: -81, title: 'Назад', available: history.length > 0, action: () => loadPage(focus, history[history.length - 1], history.slice(0, -1)) },
+    { x: 11, title: 'Далее', available: !!page?.next, action: () => loadPage(focus, page.next, [...history, after]) },
+  ];
+  for (const { x, title, available, action } of controls) {
+    if (!available) continue;
+    const control = shape('rect', { x, y: 389, width: 70, height: 27, rx: 13, fill: '#112638', stroke: '#649ea8', color: '#63e5df' }, group);
+    activate(control, title, () => { if (!pending) void action(); });
+    label(group, { x: x + 35, y: 407 }, title, '#d6ecf4', 13);
   }
+}
+
+svg.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && focus) openOverview();
+  else if (event.key === '0') setView(1, 0, 0);
+  else if (event.key === '+' || event.key === '=') zoom(1.28, { x: 0, y: 0 });
+  else if (event.key === '-') zoom(1 / 1.28, { x: 0, y: 0 });
+  else return;
+  event.preventDefault();
 });
 
 svg.addEventListener('wheel', event => {
@@ -451,23 +464,44 @@ for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) {
     if (drag?.id === /** @type {PointerEvent} */ (e).pointerId) drag = null;
   });
 }
-button('reset').addEventListener('click', () => setView(1, 0, 0));
-button('zoom-in').addEventListener('click', () => zoom(1.28, { x: 0, y: 0 }));
-button('zoom-out').addEventListener('click', () => zoom(1 / 1.28, { x: 0, y: 0 }));
+const demoFullPages = demo ? Object.entries(demo.pages).filter(([key]) => {
+  const q = new URLSearchParams(key);
+  return q.get('start') === String(defaults.start) && q.get('end') === String(defaults.end);
+}).map(([, value]) => value) : [];
 
-for (const { name, color } of categories) {
-  const row = document.createElement('button');
-  const dot = document.createElement('i'), labelNode = document.createElement('span'), count = document.createElement('strong');
-  labelNode.textContent = name;
-  dot.setAttribute('aria-hidden', 'true');
-  row.style.setProperty('--accent', color);
-  row.dataset.group = name;
-  row.append(dot, labelNode, count);
-  row.addEventListener('click', () => open(name));
-  legend.append(row);
+/** @param {Match} match @returns {Page|null} */
+function getDemoMatchPage(match) {
+  const source = demoFullPages.find(row => row.group === match.group && row.items.some(item => item.id === match.id));
+  if (!source) return null;
+  return {
+    group: source.group,
+    items: source.items.filter(item => item.id === match.id),
+    links: [],
+    external: source.external.filter(edge => edge.id === match.id),
+    next: null,
+  };
 }
+
+startChat({
+  overview: () => overview,
+  selection: getSelection,
+  search: query => {
+    if (!demo) return fetchData('/api/universe/chat-search?' + new URLSearchParams({ q: query }));
+    const matches = demoFullPages.flatMap(row => row.items
+      .filter(item => item.label.toLowerCase().includes(query.toLowerCase()))
+      .map(item => ({ id: item.id, group: row.group, label: item.label })));
+    return Promise.resolve(matches.slice(0, 8));
+  },
+  inspect: match => {
+    if (indexOf(match.group) < 0) return Promise.resolve(false);
+    setView(1, 0, 0);
+    return loadPage({ name: match.group, start: match.id, end: match.id }, 0, [], match);
+  },
+});
+
+if (demo) get('chat-source').textContent = 'Демонстрационные данные';
 drawGrid();
-render();
+renderMap();
 void loadOverview();
 
 export {};

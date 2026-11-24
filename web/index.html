@@ -5,77 +5,37 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Amatsukiyora · Карта знаний</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 40 40%27%3E%3Cg fill=%27none%27 stroke=%27%2363e5df%27 stroke-width=%272%27%3E%3Ccircle cx=%2720%27 cy=%2720%27 r=%2715%27/%3E%3Cellipse cx=%2720%27 cy=%2720%27 rx=%279%27 ry=%2716%27 transform=%27rotate(42 20 20)%27/%3E%3C/g%3E%3Ccircle cx=%2720%27 cy=%2720%27 r=%273%27 fill=%27%2363e5df%27/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="universe.css">
 </head>
 <body>
 <main class="universe">
-  <header class="app-header">
-    <div class="identity">
-      <svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="15"/><ellipse cx="20" cy="20" rx="9" ry="16" transform="rotate(42 20 20)"/><circle cx="20" cy="20" r="3" class="identity-center"/></svg>
-      <div><h1>Amatsukiyora</h1><span>Личная карта знаний</span></div>
-    </div>
-    <div class="header-actions">
-      <span id="status" role="status">Подключение…</span>
-      <button id="refresh" type="button">Обновить документы</button>
-    </div>
-  </header>
-
-  <section class="atlas" aria-label="Карта знаний">
-    <aside class="categories">
-      <h2>Созвездия</h2>
-      <p>Выберите категорию, чтобы увидеть её записи.</p>
-      <div id="legend" class="category-list"></div>
-      <div class="key" aria-label="Условные обозначения">
-        <span><i class="key-line"></i> Связи из базы</span>
-        <span><i class="key-point"></i> Кластеры записей</span>
-        <span><i class="key-bars"></i> Размеры кластеров</span>
-      </div>
-    </aside>
-
-    <section class="map-panel" aria-labelledby="map-title">
-      <div class="map-header">
-        <h2 id="map-title" tabindex="-1">Карта знаний</h2>
-        <div class="controls" aria-label="Слои карты">
-          <button data-mode="all" aria-pressed="true">Всё</button>
-          <button data-mode="memory" aria-pressed="false">Память</button>
-          <button data-mode="links" aria-pressed="false">Связи</button>
-          <button data-mode="documents" aria-pressed="false">Документы</button>
-          <button data-mode="stats" aria-pressed="false">Статистика</button>
-        </div>
-      </div>
-      <div class="universe-viewport">
-        <svg id="universe" viewBox="-540 -540 1080 1080" aria-label="Радиальная карта знаний и документов">
-          <defs>
-            <radialGradient id="core-light">
-              <stop stop-color="#143a4a"/><stop offset="1" stop-color="#0a1523"/>
-            </radialGradient>
-          </defs>
-        </svg>
-        <div class="zoom-tools" aria-label="Масштаб карты">
-          <button id="zoom-out" type="button" aria-label="Уменьшить">−</button>
-          <button id="reset" type="button" aria-label="Сбросить масштаб и положение">1:1</button>
-          <button id="zoom-in" type="button" aria-label="Увеличить">+</button>
-        </div>
-      </div>
-      <div class="navigation">
-        <button id="back" hidden>Общий вид</button>
-        <button id="prev" hidden>Назад</button>
-        <button id="next" hidden>Далее</button>
-      </div>
-    </section>
-
-    <aside class="inspector">
-      <h2 id="detail-title">Обзор</h2>
-      <p id="detail" role="status">Выберите категорию или кластер на карте.</p>
-      <div class="metrics">
-        <div><span>Записи</span><strong id="memory-count">—</strong></div>
-        <div><span>Документы</span><strong id="document-count">—</strong></div>
-        <div><span>Связи</span><strong id="link-count">—</strong></div>
-      </div>
-      <div id="entries" class="entries"></div>
-    </aside>
+  <section class="map-panel" aria-label="Карта знаний">
+    <p id="map-status" class="sr-only" role="status"></p>
+    <svg id="universe" tabindex="0" viewBox="-540 -540 1080 1080" aria-label="Радиальная карта знаний и документов">
+      <defs>
+        <radialGradient id="core-light">
+          <stop stop-color="#102329"/><stop offset=".8" stop-color="#0c1b22"/><stop offset="1" stop-color="#08151c"/>
+        </radialGradient>
+        <radialGradient id="orbit-nebula">
+          <stop stop-color="#22434e" stop-opacity=".12"/><stop offset=".63" stop-color="#1e3b48" stop-opacity=".10"/><stop offset="1" stop-color="#122c38" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+    </svg>
   </section>
+  <aside class="map-chat" aria-labelledby="chat-title">
+    <div class="chat-heading">
+      <svg viewBox="0 0 32 32" aria-hidden="true">
+        <circle cx="16" cy="16" r="13"/><ellipse cx="16" cy="16" rx="7.5" ry="13" transform="rotate(42 16 16)"/><circle cx="16" cy="16" r="2.4"/>
+      </svg>
+      <div><h1 id="chat-title">Чат карты</h1><span id="chat-source">Локальные данные</span></div>
+    </div>
+    <div id="chat-history" class="chat-history" role="log" aria-label="Сообщения чата" tabindex="0"></div>
+    <form id="chat-form" class="chat-form">
+      <label class="sr-only" for="chat-input">Вопрос или поисковая фраза</label>
+      <input id="chat-input" type="text" maxlength="200" placeholder="Спросить или найти…" required>
+      <button type="submit">Отправить</button>
+    </form>
+  </aside>
 </main>
 <script type="module" src="universe.js"></script>
 </body>
