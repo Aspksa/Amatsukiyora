@@ -2,7 +2,7 @@ const svg = document.querySelector('#brain');
 const statusElement = document.querySelector('#status');
 const ns = 'http://www.w3.org/2000/svg';
 const categories = ['Знания', 'Навыки', 'Опыт', 'Личность'];
-const colors = ['#52b8d4', '#45d4b5', '#dbad67', '#a395e8'];
+const colors = ['#427ECC', '#26C9E4', '#FFBF42', '#9875CB'];
 let entries = [], previous = new Set(), initialized = false, scale = 1, x = 0, y = 0;
 function shape(tag, attrs, parent) { const el = document.createElementNS(ns, tag); for (const [k, v] of Object.entries(attrs))
     el.setAttribute(k, String(v)); parent.append(el); return el; }
@@ -12,8 +12,8 @@ function render() {
     scene.replaceChildren();
     for (const r of [48, 76, 130, 245, 350, 390, 430])
         shape('circle', { r, cx: 0, cy: 0, class: 'orbit' }, scene);
-    shape('circle', { r: 34, fill: '#102a31', stroke: '#45d4b5', 'stroke-width': 2 }, scene);
-    const core = shape('text', { x: 0, y: 4, fill: '#d8e7e9', 'text-anchor': 'middle', 'font-size': 10 }, scene);
+    shape('circle', { r: 34, fill: '#101923', stroke: '#26C9E4', 'stroke-width': 2 }, scene);
+    const core = shape('text', { x: 0, y: 4, fill: '#D4E2E9', 'text-anchor': 'middle', 'font-size': 10 }, scene);
     core.textContent = 'ЯДРО';
     categories.forEach((category, i) => {
         const group = entries.filter(e => e.category === category);

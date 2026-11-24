@@ -5,7 +5,7 @@
 const svg = /** @type {SVGSVGElement} */ (document.querySelector('#metro'));
 const graphStatus = /** @type {HTMLElement} */ (document.querySelector('#graph-status'));
 const categories = ['Знания','Навыки','Опыт','Личность'];
-const colors = ['#4aa5ff','#55dc99','#ffab58','#b699f9'];
+const colors = ['#427ECC','#36B879','#F18B37','#9875CB'];
 const ns = 'http://www.w3.org/2000/svg';
 /** @template {keyof SVGElementTagNameMap} K
  * @param {K} tag @param {Record<string,string|number>} attrs @param {SVGElement} parent
@@ -48,7 +48,7 @@ function render(){
     for(let i=0;i<43;i++){
         const a=-Math.PI/2+i*Math.PI*2/43, p=polar(a,445), q=polar(a,65), t=polar(a,467);
         shape('line',{x1:q.x,y1:q.y,x2:p.x,y2:p.y,class:'metro-grid'},scene);
-        shape('text',{x:t.x,y:t.y+3,'text-anchor':'middle',fill:'#69838d','font-size':10},scene).textContent=String(i+1);
+        shape('text',{x:t.x,y:t.y+3,'text-anchor':'middle',fill:'#8095A4','font-size':10},scene).textContent=String(i+1);
     }
     /** @type {Map<number,Point>} */ const positions=new Map();
     const routes=shape('g',{},scene), edges=shape('g',{},scene), stations=shape('g',{},scene);
@@ -71,7 +71,7 @@ function render(){
                 }
             });
         }
-        shape('circle',{cx:hub.x,cy:hub.y,r:7,fill:'#0b1a22',stroke:color,'stroke-width':2},stations);
+        shape('circle',{cx:hub.x,cy:hub.y,r:7,fill:'#101923',stroke:color,'stroke-width':2},stations);
         shape('text',{x:label.x,y:label.y+4,'text-anchor':'middle',fill:color,'font-size':11},stations).textContent=category;
     });
     const degree=new Map();
@@ -85,12 +85,12 @@ function render(){
         const r=Math.max(a.r,b.r)+12, p=polar(a.a,r), q=polar(b.a,r);
         const sweep=((b.a-a.a+Math.PI*4)%(Math.PI*2)), clockwise=sweep<=Math.PI?1:0;
         const d='M '+a.x+' '+a.y+' L '+p.x+' '+p.y+' A '+r+' '+r+' 0 0 '+clockwise+' '+q.x+' '+q.y+' L '+b.x+' '+b.y;
-        shape('path',{d,stroke:'#f1d48a','stroke-width':1.6,opacity:.38,class:'metro-route','data-link-endpoints':link.source+','+link.target},edges);
+        shape('path',{d,stroke:'#FFBF42','stroke-width':1.6,opacity:.38,class:'metro-route','data-link-endpoints':link.source+','+link.target},edges);
     }
     for(const e of entries){
         const p=positions.get(e.id);if(!p)continue;
         const junction=degree.has(e.id),r=junction?6:3.5;
-        const node=shape('circle',{cx:p.x,cy:p.y,r,fill:junction?'#071019':p.color,stroke:p.color,'stroke-width':junction?2:1,tabindex:0,role:'button','aria-label':e.label,'data-entry-id':e.id,class:'node'},stations);
+        const node=shape('circle',{cx:p.x,cy:p.y,r,fill:junction?'#080E15':p.color,stroke:p.color,'stroke-width':junction?2:1,tabindex:0,role:'button','aria-label':e.label,'data-entry-id':e.id,class:'node'},stations);
         shape('title',{},node).textContent=e.label;
         node.addEventListener('click',()=>choose(e));
         node.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();choose(e);}});
@@ -99,8 +99,8 @@ function render(){
             shape('text',{x:t.x,y:t.y-5,'text-anchor':p.x<0?'end':'start',fill:p.color,class:'station-label'},stations).textContent=e.label.length>20?e.label.slice(0,19)+'…':e.label;
         }
     }
-    shape('circle',{r:46,fill:'#0b1a22',stroke:'#47c7d7','stroke-width':2},stations);
-    shape('text',{x:0,y:4,'text-anchor':'middle',fill:'#9defff','font-size':12},stations).textContent='ЗНАНИЯ';
+    shape('circle',{r:46,fill:'#101923',stroke:'#26C9E4','stroke-width':2},stations);
+    shape('text',{x:0,y:4,'text-anchor':'middle',fill:'#D4E2E9','font-size':12},stations).textContent='ЗНАНИЯ';
     graphStatus.textContent=positions.size+' узлов · '+visible+' видимых связей из '+links.length+(entries.length?'':' · память пока пуста');
     highlight(selected);transform();
 }
@@ -130,6 +130,6 @@ for(const event of ['pointerup','pointercancel','lostpointercapture'])svg.addEve
 document.querySelector('#metro-reset').addEventListener('click',()=>{scale=1;x=y=0;transform();});
 const legend=document.querySelector('#legend');
 categories.forEach((c,i)=>{const span=document.createElement('span');span.style.color=colors[i];span.append(document.createElement('i'),c);legend.append(span);});
-const key=document.createElement('span');key.style.color='#f1d48a';key.textContent='● Связь записей';legend.append(key);
+const key=document.createElement('span');key.style.color='#FFBF42';key.textContent='● Связь записей';legend.append(key);
 render();
 export {};
