@@ -4,10 +4,6 @@
 /** @typedef {{x:number,y:number,a:number,r:number,color:string}} Point */
 const svg = /** @type {SVGSVGElement} */ (document.querySelector('#metro'));
 const graphStatus = /** @type {HTMLElement} */ (document.querySelector('#graph-status'));
-const linkStatus = /** @type {HTMLElement} */ (document.querySelector('#link-status'));
-const detail = /** @type {HTMLElement} */ (document.querySelector('#detail'));
-const from = /** @type {HTMLSelectElement} */ (document.querySelector('#from'));
-const to = /** @type {HTMLSelectElement} */ (document.querySelector('#to'));
 const categories = ['Знания','Навыки','Опыт','Личность'];
 const colors = ['#4aa5ff','#55dc99','#ffab58','#b699f9'];
 const ns = 'http://www.w3.org/2000/svg';
@@ -44,8 +40,6 @@ function highlight(id) {
 }
 /** @param {Entry} entry */
 function choose(entry) {
-    detail.textContent=entry.category+' — '+entry.label;
-    from.value=String(entry.id);
     document.dispatchEvent(new CustomEvent('memory:selected',{detail:entry.id}));
 }
 function render(){
@@ -107,16 +101,8 @@ function render(){
     }
     shape('circle',{r:46,fill:'#0b1a22',stroke:'#47c7d7','stroke-width':2},stations);
     shape('text',{x:0,y:4,'text-anchor':'middle',fill:'#9defff','font-size':12},stations).textContent='ЗНАНИЯ';
-    graphStatus.textContent=positions.size+' узлов · '+visible+' видимых связей из '+links.length+(entries.length?'':' · добавьте записи');
+    graphStatus.textContent=positions.size+' узлов · '+visible+' видимых связей из '+links.length+(entries.length?'':' · память пока пуста');
     highlight(selected);transform();
-}
-function populate(){
-    for(const select of [from,to]){
-        const old=select.value;
-        select.replaceChildren(new Option('Выберите запись',''));
-        for(const e of entries)select.add(new Option(e.category+' — '+e.label,String(e.id)));
-        select.value=old;
-    }
 }
 async function refresh(){
     const token=++revision;
@@ -133,18 +119,9 @@ async function refresh(){
 }
 document.addEventListener('memory:loaded',event=>{
     entries=/** @type {CustomEvent<Entry[]>} */ (event).detail;
-    populate();void refresh();
+    void refresh();
 });
 document.addEventListener('memory:selected',event=>highlight(/** @type {CustomEvent<number>} */ (event).detail));
-document.querySelector('#link-form').addEventListener('submit',async event=>{
-    event.preventDefault();
-    if(!from.value||!to.value||from.value===to.value){linkStatus.textContent='Выберите две разные записи';return;}
-    try{
-        const response=await fetch('/api/links',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:Number(from.value),target:Number(to.value)})});
-        if(!response.ok)throw Error();
-        linkStatus.textContent='Связь сохранена';await refresh();
-    }catch{linkStatus.textContent='Не удалось сохранить связь';}
-});
 svg.addEventListener('wheel',event=>{event.preventDefault();scale=Math.min(4,Math.max(.5,scale*Math.exp(-event.deltaY*.001)));transform();},{passive:false});
 /** @type {{id:number,x:number,y:number}|null} */ let drag=null;
 svg.addEventListener('pointerdown',event=>{if(/** @type {Element} */ (event.target).closest('.node'))return;drag={id:event.pointerId,x:event.clientX,y:event.clientY};svg.setPointerCapture(event.pointerId);});
