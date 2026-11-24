@@ -1,6 +1,7 @@
+export {};
 type Entry={id:number;category:string;label:string};
 const svg=document.querySelector<SVGSVGElement>('#brain')!;
-const status=document.querySelector<HTMLElement>('#status')!;
+const statusElement=document.querySelector<HTMLElement>('#status')!;
 const detail=document.querySelector<HTMLElement>('#detail')!;
 const ns='http://www.w3.org/2000/svg';
 const categories=['Знания','Навыки','Опыт','Личность'];
@@ -14,12 +15,12 @@ shape('circle',{r:34,fill:'#102a31',stroke:'#45d4b5','stroke-width':2},scene);
 const core=shape('text',{x:0,y:4,fill:'#d8e7e9','text-anchor':'middle','font-size':10},scene);core.textContent='ЯДРО';
 categories.forEach((category,i)=>{const group=entries.filter(e=>e.category===category);const color=colors[i];const mid=-Math.PI/2+i*Math.PI/2;const title=shape('text',{x:Math.cos(mid)*320,y:Math.sin(mid)*320,fill:color,'text-anchor':'middle','font-size':12},scene);title.textContent=category+' · '+group.length;
 group.slice(0,120).forEach((entry,j)=>{const row=Math.floor(j/12), col=j%12;const angle=mid+(col-5.5)*.095;const r=145+row*14;const px=Math.cos(angle)*r,py=Math.sin(angle)*r;shape('line',{x1:Math.cos(angle)*76,y1:Math.sin(angle)*76,x2:px,y2:py,stroke:color,opacity:.12},scene);const node=shape('circle',{cx:px,cy:py,r:4,fill:color,stroke:color,tabindex:0,role:'button','aria-label':entry.label,class:'node'+(initialized&&!previous.has(entry.id)?' pulse':'')},scene);const select=()=>{detail.textContent=entry.category+' — '+entry.label;};node.addEventListener('click',select);node.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();select();}});const outer=shape('circle',{cx:Math.cos(mid+(j/Math.max(group.length,1)-.5)*1.2)*390,cy:Math.sin(mid+(j/Math.max(group.length,1)-.5)*1.2)*390,r:5,fill:'none',stroke:color,opacity:.6},scene);outer.addEventListener('click',select);});});previous=new Set(entries.map(e=>e.id));initialized=true;transform();}
-async function load(){try{const response=await fetch('/api/memory');if(!response.ok)throw Error();entries=await response.json() as Entry[];render();status.textContent='SQLite · '+entries.length+' записей (до 120 на сектор)';}catch{status.textContent='Сервер недоступен';}}
+async function load(){try{const response=await fetch('/api/memory');if(!response.ok)throw Error();entries=await response.json() as Entry[];render();statusElement.textContent='SQLite · '+entries.length+' записей (до 120 на сектор)';}catch{statusElement.textContent='Сервер недоступен';}}
 svg.addEventListener('wheel',e=>{e.preventDefault();scale=Math.min(4,Math.max(.5,scale*Math.exp(-e.deltaY*.001)));transform();},{passive:false});
 let drag:{id:number;x:number;y:number}|null=null;
 svg.addEventListener('pointerdown',e=>{if((e.target as Element).closest('.node'))return;drag={id:e.pointerId,x:e.clientX,y:e.clientY};svg.setPointerCapture(e.pointerId);});
 svg.addEventListener('pointermove',e=>{if(!drag||drag.id!==e.pointerId)return;const matrix=svg.getScreenCTM();if(!matrix)return;x+=(e.clientX-drag.x)/matrix.a;y+=(e.clientY-drag.y)/matrix.d;drag.x=e.clientX;drag.y=e.clientY;transform();});
 for(const event of ['pointerup','pointercancel','lostpointercapture'])svg.addEventListener(event,()=>{drag=null;});
 document.querySelector('#reset')!.addEventListener('click',()=>{scale=1;x=y=0;transform();});
-document.querySelector<HTMLFormElement>('#add')!.addEventListener('submit',async e=>{e.preventDefault();const input=document.querySelector<HTMLInputElement>('#label')!;try{const response=await fetch('/api/memory',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({category:document.querySelector<HTMLSelectElement>('#category')!.value,label:input.value})});if(!response.ok)throw Error();input.value='';await load();}catch{status.textContent='Не удалось сохранить запись';}});
+document.querySelector<HTMLFormElement>('#add')!.addEventListener('submit',async e=>{e.preventDefault();const input=document.querySelector<HTMLInputElement>('#label')!;try{const response=await fetch('/api/memory',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({category:document.querySelector<HTMLSelectElement>('#category')!.value,label:input.value})});if(!response.ok)throw Error();input.value='';await load();}catch{statusElement.textContent='Не удалось сохранить запись';}});
 void load();
