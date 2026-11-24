@@ -1,81 +1,473 @@
 // @ts-check
-/** @typedef {{start:number,end:number,count:number}} Bin */
-/** @typedef {{name:string,count:number,bins:Bin[]}} Group */
-/** @typedef {{source:string,target:string,count:number}} Route */
-/** @typedef {{memory:number,documents:number,indexed:number,links:number,groups:Group[],routes:Route[]}} Overview */
-/** @typedef {{id:number,label:string,size?:number,indexed?:boolean}} Item */
-/** @typedef {{group:string,items:Item[],links:{source:number,target:number}[],external:{id:number,group:string,count:number}[],next:number|null}} Page */
-const svg=/** @type {SVGSVGElement} */(document.querySelector('#universe'));
-const statusElement=document.querySelector('#status');
-const detail=document.querySelector('#detail');
-const back=/** @type {HTMLButtonElement} */(document.querySelector('#back'));
-const prev=/** @type {HTMLButtonElement} */(document.querySelector('#prev'));
-const next=/** @type {HTMLButtonElement} */(document.querySelector('#next'));
-const palette=['#427ECC','#26C9E4','#FFBF42','#9875CB','#36B879'];
-const names=['Знания','Навыки','Опыт','Личность','Документы'];
-/** @type {Overview|null} */let data=null;
-/** @type {Page|null} */let page=null;
-/** @type {{name:string,start:number,end:number}|null} */let focus=null;
-let mode='all',scale=1,x=0,y=0,request=0,after=0,selected=0;
-/** @type {number[]} */let history=[];
-const ns='http://www.w3.org/2000/svg';
+/** @typedef {{start:number, end:number, count:number}} Bin */
+/** @typedef {{name:string, count:number, bins:Bin[]}} Group */
+/** @typedef {{source:string, target:string, count:number}} Route */
+/** @typedef {{memory:number, documents:number, indexed:number, links:number, groups:Group[], routes:Route[]}} Overview */
+/** @typedef {{id:number, label:string, size?:number, indexed?:boolean}} Item */
+/** @typedef {{group:string, items:Item[], links:{source:number,target:number}[], external:{id:number,group:string,count:number}[], next:number|null}} Page */
+/** @typedef {{name:string, start:number, end:number}} Focus */
+/** @typedef {{x:number,y:number}} Point */
+
+const svg = /** @type {SVGSVGElement} */ (document.querySelector('#universe'));
+const categories = [
+  { name: 'Знания', color: '#65baff' },
+  { name: 'Навыки', color: '#62ebd3' },
+  { name: 'Опыт', color: '#ffc276' },
+  { name: 'Личность', color: '#ba9aff' },
+  { name: 'Документы', color: '#8cdda2' },
+];
+const get = (/** @type {string} */ id) => document.getElementById(id);
+const button = (/** @type {string} */ id) => /** @type {HTMLButtonElement} */ (get(id));
+const back = button('back'), prev = button('prev'), next = button('next'), refresh = button('refresh');
+const detail = get('detail'), title = get('detail-title'), entries = get('entries'), legend = get('legend');
+const format = new Intl.NumberFormat('ru-RU');
+const fmt = (/** @type {number} */ value) => format.format(value);
+const defaults = { start: 1, end: Number.MAX_SAFE_INTEGER };
+const demoElement = get('demo-data');
+const demo = /** @type {{overview:Overview, pages:Record<string,Page>}|null} */ (demoElement ? JSON.parse(demoElement.textContent) : null);
+
+/** @type {Overview|null} */ let overview = null;
+/** @type {Page|null} */ let page = null;
+/** @type {Focus|null} */ let focus = null;
+/** @type {number[]} */ let history = [];
+let after = 0, chosen = 0, request = 0, pending = false, mode = 'all';
+let scale = 1, x = 0, y = 0;
+
 /** @template {keyof SVGElementTagNameMap} K
  * @param {K} tag @param {Record<string,string|number>} attrs @param {SVGElement} parent
  * @returns {SVGElementTagNameMap[K]} */
-function el(tag,attrs,parent){const n=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))n.setAttribute(k,String(v));parent.append(n);return n;}
-const scene=el('g',{},svg);
-const fmt=(/** @type {number} */ n)=>n.toLocaleString('ru-RU');
-const polar=(/** @type {number} */ a,/** @type {number} */ r)=>({x:Math.cos(a)*r,y:Math.sin(a)*r});
-const angle=(/** @type {string} */ name)=>-Math.PI/2+names.indexOf(name)*Math.PI*2/names.length;
-const color=(/** @type {string} */ name)=>palette[names.indexOf(name)]||'#8CA2B1';
-/** @param {SVGElement} parent @param {number} x @param {number} y @param {string} value @param {string} fill @param {number} size */
-function text(parent,x,y,value,fill,size){const t=el('text',{x,y,fill,'font-size':size,'text-anchor':'middle',class:'universe-text'},parent);t.textContent=value;return t;}
-/** @param {SVGElement} node @param {string} label @param {()=>void} action */
-function interactive(node,label,action){node.setAttribute('class','universe-node');node.setAttribute('tabindex','0');node.setAttribute('role','button');node.setAttribute('aria-label',label);el('title',{},node).textContent=label;node.addEventListener('click',action);node.addEventListener('keydown',e=>{const k=/** @type {KeyboardEvent} */(e);if(k.key==='Enter'||k.key===' '){k.preventDefault();action();}});}
-function transform(){scene.setAttribute('transform','translate('+x+' '+y+') scale('+scale+')');}
-function reset(){scale=1;x=0;y=0;transform();}
-/** @param {number} a @param {number} b @param {number} ra @param {number} rb @param {number} track */
-function route(a,b,ra,rb,track){const p=polar(a,ra),q=polar(b,rb),u=polar(a,track),v=polar(b,track);const delta=((b-a+Math.PI*4)%(2*Math.PI));return 'M '+p.x+' '+p.y+' L '+u.x+' '+u.y+(Math.abs(delta)<.0001?'':' A '+track+' '+track+' 0 0 '+(delta<=Math.PI?1:0)+' '+v.x+' '+v.y)+' L '+q.x+' '+q.y;}
-/** @param {SVGElement} parent @param {number} a @param {number} b @param {number} ra @param {number} rb @param {number} track @param {string} stroke @param {number} count */
-function drawRoute(parent,a,b,ra,rb,track,stroke,count){el('path',{d:route(a,b,ra,rb,track),stroke,'stroke-width':Math.min(6,1.2+Math.log2(count+1)*.55),opacity:.8,class:'universe-route'},parent);}
-function grid(){for(const r of [65,100,155,210,265,320,375,430,465])el('circle',{r,fill:'none',stroke:'#263948','stroke-width':.7,opacity:.55},scene);for(let i=0;i<60;i++){const a=i*Math.PI/30,p=polar(a,65),q=polar(a,465);el('line',{x1:p.x,y1:p.y,x2:q.x,y2:q.y,stroke:'#263948','stroke-width':.4,opacity:.5},scene);}}
-function core(){el('circle',{r:55,fill:'#101923',stroke:'#26C9E4','stroke-width':2},scene);el('circle',{r:48,fill:'none',stroke:'#26C9E4',opacity:.35},scene);text(scene,0,-9,focus?focus.name:'ЯДРО','#D4E2E9',12);text(scene,0,9,focus&&page?fmt(page.items.length):fmt((data?.memory||0)+(data?.documents||0)),'#FFBF42',16);text(scene,0,25,focus?'на странице':'записей и файлов','#8CA2B1',8);}
-function overview(){if(!data)return;const edges=el('g',{},scene),nodes=el('g',{},scene);const max=Math.max(1,...data.groups.map(g=>g.count));
-    if(mode==='all'||mode==='links')data.routes.forEach((r,i)=>{if(!names.includes(r.source)||!names.includes(r.target))return;const a=angle(r.source),b=angle(r.target);if(r.source===r.target){const p=polar(a,210);el('circle',{cx:p.x,cy:p.y,r:28,fill:'none',stroke:color(r.source),'stroke-width':Math.min(6,1+Math.log2(r.count+1)),opacity:.75},edges);}else drawRoute(edges,a,b,155,155,175+i%12*12,color(r.source),r.count);});
-    data.groups.forEach(g=>{const a=angle(g.name),c=color(g.name),doc=g.name==='Документы';
-        if(mode==='documents'&&!doc||mode==='memory'&&doc)return;
-        const hub=polar(a,155),lab=polar(a,115);
-        if(mode!=='stats'){el('line',{x1:0,y1:0,x2:hub.x,y2:hub.y,stroke:c,'stroke-width':1.5,opacity:.45},edges);const n=el('circle',{cx:hub.x,cy:hub.y,r:12,fill:'#101923',stroke:c,'stroke-width':2},nodes);interactive(n,g.name+' · '+fmt(g.count),()=>open(g.name));text(nodes,lab.x,lab.y,g.name,c,12);text(nodes,hub.x,hub.y+24,fmt(g.count),c,12);}
-        if(mode==='all'||mode==='memory'||mode==='documents')g.bins.forEach(bin=>{const i=(bin.start-1)/(bin.end-bin.start+1),col=i%4,row=Math.floor(i/4),a2=a+(col-1.5)*.19,r=235+row*48,p=polar(a2,r);el('path',{d:route(a,a2,155,r,200+row*8),stroke:c,'stroke-width':.9,opacity:.35,fill:'none'},edges);const attrs={cx:p.x,cy:p.y,r:Math.min(16,4+Math.log2(bin.count+1)),fill:'#101923',stroke:c,'stroke-width':1.5};const n=doc?el('rect',{x:p.x-7,y:p.y-9,width:14,height:18,rx:2,fill:'#101923',stroke:c,'stroke-width':1.5},nodes):el('circle',attrs,nodes);interactive(n,g.name+': '+fmt(bin.count)+' записей',()=>open(g.name,bin.start,bin.end));text(nodes,p.x,p.y+24,fmt(bin.count),c,10);});
-        if(mode==='all'||mode==='stats'){const height=68*Math.log1p(g.count)/Math.log1p(max),start=430,bar=el('g',{transform:'rotate('+((a+Math.PI/2)*180/Math.PI)+')'},nodes);el('rect',{x:-20,y:-start-height,width:40,height:height,rx:2,fill:c,opacity:.82},bar);const p=polar(a,510);text(nodes,p.x,p.y,g.name+' '+fmt(g.count),c,12);}
+function shape(tag, attrs, parent) {
+  const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, String(value));
+  parent.append(node);
+  return node;
+}
+
+const scene = shape('g', {}, svg);
+const grid = shape('g', { 'aria-hidden': 'true' }, scene);
+const content = shape('g', {}, scene);
+
+/** @param {number} degrees @param {number} radius */
+function point(degrees, radius) {
+  const a = degrees * Math.PI / 180;
+  return { x: radius * Math.cos(a), y: radius * Math.sin(a) };
+}
+
+const angle = (/** @type {number} */ i) => -90 + i * 72;
+const indexOf = (/** @type {string} */ name) => categories.findIndex(category => category.name === name);
+
+/** @param {Point} p */
+const xy = p => p.x.toFixed(2) + ' ' + p.y.toFixed(2);
+
+/** @param {SVGElement} parent @param {Point} p @param {string} value @param {string} color @param {number} size */
+function label(parent, p, value, color, size) {
+  shape('text', { ...p, fill: color, 'font-size': size, 'text-anchor': 'middle', class: 'universe-text' }, parent).textContent = value;
+}
+
+/** @param {SVGElement} node @param {string} title @param {()=>void} action */
+function activate(node, title, action) {
+  node.classList.add('universe-node');
+  node.setAttribute('tabindex', '0');
+  node.setAttribute('role', 'button');
+  node.setAttribute('aria-label', title);
+  shape('title', {}, node).textContent = title;
+  node.addEventListener('click', action);
+  node.addEventListener('keydown', event => {
+    const key = /** @type {KeyboardEvent} */ (event).key;
+    if (key === 'Enter' || key === ' ') {
+      event.preventDefault();
+      action();
+    }
+  });
+}
+
+/** @param {number} a @param {number} b @param {number} radius */
+function arc(a, b, radius) {
+  const delta = b - a;
+  return 'M ' + xy(point(a, radius)) + ' A ' + radius + ' ' + radius + ' 0 ' +
+    Number(Math.abs(delta) > 180) + ' ' + Number(delta > 0) + ' ' + xy(point(b, radius));
+}
+
+/** @param {number} a @param {number} b @param {number} start @param {number} end @param {number} radius */
+function track(a, b, start, end, radius) {
+  const signed = ((b - a + 540) % 360) - 180;
+  const corner = Math.min(Math.abs(signed) / 3, 5) * Math.sign(signed);
+  const from = a + corner, to = a + signed - corner;
+  return 'M ' + xy(point(a, start)) + ' L ' + xy(point(a, radius - 13)) +
+    ' Q ' + xy(point(a, radius)) + ' ' + xy(point(from, radius)) +
+    (signed ? ' A ' + radius + ' ' + radius + ' 0 0 ' + Number(signed > 0) + ' ' + xy(point(to, radius)) : '') +
+    ' Q ' + xy(point(b, radius)) + ' ' + xy(point(b, radius - 13)) +
+    ' L ' + xy(point(b, end));
+}
+
+/** @param {SVGElement} parent @param {string} d @param {string} color @param {number} count @param {boolean} [animated] */
+function drawRoute(parent, d, color, count, animated = false) {
+  const width = Math.min(4.5, 1 + Math.log2(count + 1) * .48);
+  if (animated) shape('path', { d, stroke: color, 'stroke-width': width + 7, class: 'universe-route route-glow' }, parent);
+  shape('path', { d, stroke: color, 'stroke-width': width, opacity: .78, class: 'universe-route' }, parent);
+  if (animated) shape('path', { d, stroke: '#eefbff', 'stroke-width': width * .72, class: 'universe-route route-current' }, parent);
+}
+
+function drawGrid() {
+  for (const r of [86, 113, 154, 198, 245, 292, 341, 394, 445, 495]) {
+    shape('circle', { r, fill: 'none', stroke: '#506281', 'stroke-width': r === 394 ? 1.3 : .8, opacity: r === 394 ? .6 : .31 }, grid);
+  }
+  for (let i = 0; i < 120; i++) {
+    const a = i * 3;
+    const p = point(a, i % 6 ? 488 : 478), q = point(a, 495);
+    shape('line', { x1: p.x, y1: p.y, x2: q.x, y2: q.y, stroke: '#879cbd', opacity: i % 6 ? .24 : .54 }, grid);
+    if (i % 6 === 0) {
+      const inner = point(a, 98), outer = point(a, 473);
+      shape('line', { x1: inner.x, y1: inner.y, x2: outer.x, y2: outer.y, stroke: '#4b6686', opacity: .18 }, grid);
+    }
+  }
+  for (let i = 0; i < 170; i++) {
+    const p = point(i * 137.508, 106 + (i * 641 % 376));
+    shape('circle', { cx: p.x, cy: p.y, r: i % 13 === 0 ? 1.45 : .75, fill: '#a4c6ed', opacity: i % 13 === 0 ? .53 : .27 }, grid);
+  }
+}
+
+/** @param {SVGElement} parent */
+function drawCore(parent) {
+  shape('circle', { r: 75, fill: 'none', stroke: '#63e5df', 'stroke-width': 1, opacity: .6, class: 'core-aura' }, parent);
+  shape('circle', { r: 63, fill: 'url(#core-light)', stroke: '#63e5df', 'stroke-width': 1.7, color: '#63e5df' }, parent);
+  shape('circle', { r: 57, fill: 'none', stroke: '#63e5df', opacity: .32 }, parent);
+  const count = focus ? page?.items.length || 0 : (overview?.memory || 0) + (overview?.documents || 0);
+  label(parent, { x: 0, y: -19 }, focus?.name || 'Ядро', '#b7e7ec', 16);
+  label(parent, { x: 0, y: 13 }, fmt(count), '#f4feff', 32);
+  label(parent, { x: 0, y: 35 }, focus ? 'на странице' : 'записей и файлов', '#adc4d9', 12);
+}
+
+/** @param {Group} group @param {number} i @param {SVGElement} bars @param {SVGElement} nodes @param {number} maximum */
+function drawGroup(group, i, bars, nodes, maximum) {
+  const { color, name } = categories[i];
+  const a = angle(i);
+  const showBars = mode === 'all' || mode === 'stats';
+  const showClusters = mode !== 'stats' && mode !== 'links';
+  shape('path', { d: arc(a - 31, a + 31, 395), stroke: color, 'stroke-width': 2.4, opacity: .65, fill: 'none' }, bars);
+  if (showBars) {
+    const width = group.bins[0] ? group.bins[0].end - group.bins[0].start + 1 : 1;
+    const bySlot = new Map(group.bins.map(bin => [(bin.start - 1) / width, bin]));
+    for (let slot = 0; slot < 16; slot++) {
+      const bin = bySlot.get(slot);
+      const degrees = a + (slot - 7.5) * 3.65;
+      const start = point(degrees, 403);
+      const length = bin ? 9 + 62 * Math.sqrt(bin.count / maximum) : 4;
+      const end = point(degrees, 403 + length);
+      const bar = shape('line', { x1: start.x, y1: start.y, x2: end.x, y2: end.y, stroke: color, 'stroke-width': bin ? 6 : 2, opacity: bin ? .9 : .23, color }, bars);
+      if (bin) activate(bar, name + ' · ' + fmt(bin.count), () => open(name, bin.start, bin.end));
+    }
+  }
+  if (showClusters) {
+    group.bins.forEach(bin => {
+      const slot = (bin.start - 1) / (bin.end - bin.start + 1);
+      const degrees = a + ((slot % 4) - 1.5) * 11;
+      const p = point(degrees, 222 + Math.floor(slot / 4) * 37);
+      const origin = point(a, 154);
+      shape('path', { d: 'M ' + xy(origin) + ' L ' + xy(point(degrees, 198)) + ' L ' + xy(p), fill: 'none', stroke: color, opacity: .24 }, nodes);
+      const dot = shape('circle', { cx: p.x, cy: p.y, r: 4 + Math.min(5, Math.log2(bin.count + 1)), fill: '#102338', stroke: color, 'stroke-width': 2, color }, nodes);
+      activate(dot, name + ' · ' + fmt(bin.count), () => open(name, bin.start, bin.end));
     });
+  }
+  const hub = point(a, 154);
+  const node = shape('circle', { cx: hub.x, cy: hub.y, r: 11, fill: '#0b1627', stroke: color, 'stroke-width': 3, color }, nodes);
+  activate(node, name + ' · ' + fmt(group.count), () => open(name));
+  shape('circle', { cx: hub.x, cy: hub.y, r: 3, fill: color, 'pointer-events': 'none' }, nodes);
+  const radial = point(a, 502);
+  label(nodes, radial, name + '  ' + fmt(group.count), color, 16);
 }
-function details(){if(!page||!focus)return;const edges=el('g',{},scene),nodes=el('g',{},scene);const c=color(focus.name),isDoc=focus.name==='Документы';
-    /** @type {Map<number,{x:number,y:number,a:number,r:number}>} */const positions=new Map();
-    page.items.forEach((e,i)=>{const ring=Math.floor(i/20),slot=i%20,a=-Math.PI/2+slot*Math.PI/10+ring*.045,r=135+ring*78;positions.set(e.id,{...polar(a,r),a,r});});
-    if(mode==='all'||mode==='links'||mode==='documents'){page.links.forEach((link,i)=>{const a=positions.get(link.source),b=positions.get(link.target);if(a&&b)drawRoute(edges,a.a,b.a,a.r,b.r,Math.max(a.r,b.r)+12+i%4*5,c,1);});
-      // Group endpoints represent actual linked records, not invented individual stations.
-      page.external.filter(e=>e.group!==focus?.name&&names.includes(e.group)).forEach((e,i)=>{const p=positions.get(e.id);if(p)drawRoute(edges,p.a,angle(e.group),p.r,440,410+i%4*7,color(e.group),e.count);});
-      for(const name of names.filter(n=>n!==focus?.name)){const p=polar(angle(name),440);el('circle',{cx:p.x,cy:p.y,r:8,stroke:color(name),fill:'#101923'},nodes);text(nodes,p.x,p.y+20,name,color(name),10);}}
-    page.items.forEach((item,i)=>{const p=positions.get(item.id);if(!p)return;const n=isDoc?el('rect',{x:p.x-6,y:p.y-8,width:12,height:16,rx:2,fill:'#101923',stroke:c,'stroke-width':2},nodes):el('circle',{cx:p.x,cy:p.y,r:5,fill:c,stroke:'#D4E2E9','stroke-width':1},nodes);interactive(n,item.label,()=>{selected=item.id;render();detail.textContent=item.label+(isDoc?' · '+fmt(item.size||0)+' байт · '+(item.indexed?'текст проиндексирован':'метаданные'):'');});if(selected===item.id)n.classList.add('universe-selected');if(page&&page.items.length<=24||selected===item.id)text(nodes,p.x,p.y-12,item.label.length>22?item.label.slice(0,21)+'…':item.label,c,10);});
+
+function drawOverview() {
+  if (!overview) return;
+  const bars = shape('g', {}, content), routes = shape('g', {}, content), nodes = shape('g', {}, content);
+  const maximum = Math.max(1, ...overview.groups.flatMap(group => group.bins.map(bin => bin.count)));
+  if (mode === 'all' || mode === 'links') {
+    overview.routes.forEach((route, i) => {
+      const from = indexOf(route.source), to = indexOf(route.target);
+      if (from < 0 || to < 0) return;
+      const a = angle(from), b = angle(to);
+      const hub = point(a, 154);
+      const distance = Math.min(Math.abs(from - to), 5 - Math.abs(from - to));
+      const radius = distance === 1 ? 246 + i % 5 * 24 : 98 + i % 5 * 10;
+      const d = from === to
+        ? 'M ' + xy(hub) + ' Q ' + xy(point(a - 16, 207)) + ' ' + xy(point(a, 209)) +
+          ' Q ' + xy(point(a + 16, 207)) + ' ' + xy(hub)
+        : track(a, b, 154, 154, radius);
+      drawRoute(routes, d, categories[from].color, route.count, true);
+    });
+  }
+  for (const group of overview.groups) {
+    const i = indexOf(group.name);
+    if (i < 0 || mode === 'documents' && i !== 4 || mode === 'memory' && i === 4) continue;
+    drawGroup(group, i, bars, nodes, maximum);
+  }
 }
-function render(){scene.replaceChildren();grid();if(focus)details();else overview();core();transform();back.hidden=!focus;prev.hidden=!focus||!history.length;next.hidden=!focus||!page?.next;statusElement.textContent=data?fmt(data.memory)+' записей · '+fmt(data.documents)+' документов · '+fmt(data.links)+' связей':'Подключение…';}
-async function load(){const id=++request;try{const response=await fetch('/api/universe');if(!response.ok)throw Error();const result=await response.json();if(id!==request)return;data=result;focus=null;page=null;history=[];selected=0;detail.textContent='Выберите кластер или группу';render();}catch{if(id===request)statusElement.textContent='Не удалось загрузить карту';}}
-async function loadPage(){if(!focus)return;const id=++request;const q=new URLSearchParams({group:focus.name,after:String(after),start:String(focus.start),end:String(focus.end)});try{const response=await fetch('/api/universe/page?'+q);if(!response.ok)throw Error();const result=await response.json();if(id!==request)return;page=result;selected=0;detail.textContent=focus.name+' · '+fmt(page.items.length)+' элементов на странице';render();}catch{if(id===request)detail.textContent='Не удалось загрузить кластер';}}
+
+function drawDetails() {
+  if (!focus || !page) return;
+  const groupIndex = indexOf(focus.name);
+  const { color } = categories[groupIndex];
+  const routes = shape('g', {}, content), nodes = shape('g', {}, content);
+  const positions = new Map(page.items.map((item, i) => {
+    const a = -86 + (i % 20) * 18 + Math.floor(i / 20) * 6;
+    const r = 145 + Math.floor(i / 20) * 70;
+    return [item.id, { a, r, ...point(a, r) }];
+  }));
+  const selected = new Set([chosen]);
+  if (mode !== 'memory' && mode !== 'stats') {
+    page.links.forEach((link, i) => {
+      const from = positions.get(link.source), to = positions.get(link.target);
+      const active = link.source === chosen || link.target === chosen;
+      if (active) selected.add(link.source).add(link.target);
+      drawRoute(routes, track(from.a, to.a, from.r, to.r, Math.max(from.r, to.r) + 16 + i % 4 * 5), color, active ? 12 : 1, active);
+    });
+    page.external.forEach(edge => {
+      const i = indexOf(edge.group);
+      if (i < 0 || i === groupIndex) return;
+      const p = positions.get(edge.id);
+      drawRoute(routes, track(p.a, angle(i) + 4, p.r, 435, 374 + i * 9), categories[i].color, edge.count, edge.id === chosen);
+    });
+    categories.forEach((category, i) => {
+      if (i === groupIndex) return;
+      const p = point(angle(i) + 4, 435);
+      const station = shape('circle', { cx: p.x, cy: p.y, r: 8, stroke: category.color, fill: '#0b1627', 'stroke-width': 2, color: category.color }, nodes);
+      activate(station, category.name, () => open(category.name));
+      label(nodes, { x: p.x, y: p.y + 25 }, category.name, category.color, 15);
+    });
+  }
+  page.items.forEach(item => {
+    const p = positions.get(item.id);
+    const highlighted = selected.has(item.id);
+    const attrs = { fill: highlighted ? '#fff' : '#102338', stroke: color, 'stroke-width': highlighted ? 3 : 2, color };
+    const node = groupIndex === 4
+      ? shape('rect', { x: p.x - 5, y: p.y - 6, width: 10, height: 12, rx: 2, ...attrs }, nodes)
+      : shape('circle', { cx: p.x, cy: p.y, r: highlighted ? 8 : 5.7, ...attrs }, nodes);
+    node.dataset.entry = String(item.id);
+    activate(node, item.label, () => choose(item, node === document.activeElement));
+    if (chosen === item.id) node.classList.add('universe-selected');
+    if (page.items.length <= 16 || highlighted) {
+      const name = item.label.length > 22 ? item.label.slice(0, 21) + '…' : item.label;
+      label(nodes, { x: p.x, y: p.y - 14 }, name, color, 14);
+    }
+  });
+}
+
+function renderMap(animate = false) {
+  content.replaceChildren();
+  content.classList.remove('scene-content');
+  if (focus) drawDetails();
+  else drawOverview();
+  drawCore(content);
+  if (animate) {
+    content.getBoundingClientRect();
+    content.classList.add('scene-content');
+  }
+}
+
+/** @param {Item} item @param {boolean} [restoreFocus] */
+function choose(item, restoreFocus = false) {
+  chosen = item.id;
+  detail.textContent = item.label + (focus?.name === 'Документы'
+    ? ' · ' + fmt(item.size || 0) + ' байт · ' + (item.indexed ? 'текст проиндексирован' : 'метаданные')
+    : '');
+  for (const row of entries.querySelectorAll('button')) {
+    row.setAttribute('aria-pressed', String(row.dataset.entry === String(item.id)));
+  }
+  renderMap();
+  if (restoreFocus) {
+    const node = /** @type {SVGElement|null} */ (svg.querySelector('[data-entry="' + item.id + '"]'));
+    node?.focus();
+  }
+}
+
+/** @param {boolean} [animate] */
+function render(animate = false) {
+  renderMap(animate);
+  title.textContent = focus?.name || 'Обзор';
+  get('map-title').textContent = focus?.name || 'Карта знаний';
+  legend.querySelectorAll('button').forEach(row => {
+    const group = overview?.groups.find(group => group.name === row.dataset.group);
+    row.setAttribute('aria-pressed', String(row.dataset.group === focus?.name));
+    row.querySelector('strong').textContent = group ? fmt(group.count) : '—';
+  });
+  for (const [id, value] of [
+    ['memory-count', overview?.memory], ['document-count', overview?.documents], ['link-count', overview?.links],
+  ]) {
+    if (typeof id === 'string') get(id).textContent = typeof value === 'number' ? fmt(value) : '—';
+  }
+  back.hidden = !focus;
+  prev.hidden = !focus || !history.length;
+  next.hidden = !focus || !page?.next;
+  prev.disabled = next.disabled = pending;
+  entries.replaceChildren();
+  for (const item of page?.items || []) {
+    const row = document.createElement('button');
+    row.textContent = item.label;
+    row.dataset.entry = String(item.id);
+    row.setAttribute('aria-pressed', 'false');
+    row.addEventListener('click', () => choose(item));
+    entries.append(row);
+  }
+}
+
+/** @param {string} url @param {RequestInit} [options] */
+async function fetchData(url, options) {
+  const response = await fetch(url, options);
+  if (!response.ok) throw Error('HTTP ' + response.status);
+  return response.json();
+}
+
+async function loadOverview() {
+  const token = ++request;
+  try {
+    const result = demo?.overview || await fetchData('/api/universe');
+    if (token !== request) return;
+    overview = result;
+    get('status').textContent = demo ? 'Демонстрационные данные' : 'Локальные данные';
+    if (!focus) detail.textContent = result.memory || result.documents
+      ? 'Выберите категорию или кластер на карте.'
+      : 'Карта пока пуста. Добавьте файлы в Aspksa/Документы и обновите документы.';
+    render(true);
+  } catch {
+    if (token === request) get('status').textContent = 'Не удалось загрузить карту';
+  }
+}
+
+/** @param {Focus} target @param {number} cursor @param {number[]} stack */
+async function loadPage(target, cursor, stack) {
+  const token = ++request;
+  const fromMap = svg.contains(document.activeElement);
+  let loaded = false;
+  pending = true;
+  prev.disabled = next.disabled = true;
+  detail.textContent = 'Загрузка…';
+  const q = new URLSearchParams({ group: target.name, after: String(cursor), start: String(target.start), end: String(target.end) });
+  try {
+    const result = demo ? demo.pages[q.toString()] : await fetchData('/api/universe/page?' + q);
+    if (token !== request) return;
+    if (!result) throw Error('Missing page');
+    loaded = true;
+    focus = target;
+    page = result;
+    after = cursor;
+    history = stack;
+    chosen = 0;
+    detail.textContent = page.items.length ? fmt(page.items.length) + ' элементов на странице' : 'В этой категории пока нет записей.';
+  } catch {
+    if (token === request) detail.textContent = 'Не удалось загрузить записи.';
+  } finally {
+    if (token === request) {
+      pending = false;
+      render(true);
+      if (loaded && fromMap && document.activeElement === document.body) get('map-title').focus();
+    }
+  }
+}
+
 /** @param {string} name @param {number} [start] @param {number} [end] */
-function open(name,start=1,end=Number.MAX_SAFE_INTEGER){focus={name,start,end};page=null;history=[];after=0;reset();void loadPage();}
-back.addEventListener('click',()=>{request++;focus=null;page=null;history=[];reset();detail.textContent='Выберите кластер или группу';render();});
-next.addEventListener('click',()=>{if(page?.next){history.push(after);after=page.next;void loadPage();}});
-prev.addEventListener('click',()=>{if(history.length){after=history.pop();void loadPage();}});
-document.querySelectorAll('[data-mode]').forEach(b=>b.addEventListener('click',()=>{mode=b.getAttribute('data-mode')||'all';document.querySelectorAll('[data-mode]').forEach(n=>n.setAttribute('aria-pressed',String(n===b)));if(focus){request++;focus=null;page=null;history=[];reset();}render();}));
-const refresh=/** @type {HTMLButtonElement} */(document.querySelector('#refresh'));
-refresh.addEventListener('click',async()=>{refresh.disabled=true;try{const response=await fetch('/api/universe/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});if(!response.ok)throw Error();const scan=await response.json();await load();if(scan.errors)detail.textContent='Часть файлов недоступна: '+scan.errors;}catch{detail.textContent='Не удалось обновить документы';}finally{refresh.disabled=false;}});
-svg.addEventListener('wheel',e=>{e.preventDefault();const m=svg.getScreenCTM();if(!m)return;const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(m.inverse()),s=Math.min(8,Math.max(.65,scale*Math.exp(-e.deltaY*.001)));x=p.x-(p.x-x)*s/scale;y=p.y-(p.y-y)*s/scale;scale=s;transform();},{passive:false});
-/** @type {{id:number,x:number,y:number}|null} */let drag=null;
-svg.addEventListener('pointerdown',e=>{if(/** @type {Element} */(e.target).closest('.universe-node'))return;drag={id:e.pointerId,x:e.clientX,y:e.clientY};svg.setPointerCapture(e.pointerId);});
-svg.addEventListener('pointermove',e=>{if(!drag||drag.id!==e.pointerId)return;const m=svg.getScreenCTM();if(!m)return;x+=(e.clientX-drag.x)/m.a;y+=(e.clientY-drag.y)/m.d;drag.x=e.clientX;drag.y=e.clientY;transform();});
-for(const event of ['pointerup','pointercancel','lostpointercapture'])svg.addEventListener(event,()=>{drag=null;});
-document.querySelector('#reset').addEventListener('click',reset);
-const legend=document.querySelector('#legend');names.forEach((name,i)=>{const b=document.createElement('button');b.textContent=name;b.style.color=palette[i];b.addEventListener('click',()=>open(name));legend.append(b);});
-render();void load();
+function open(name, start = defaults.start, end = defaults.end) {
+  setView(1, 0, 0);
+  void loadPage({ name, start, end }, 0, []);
+}
+
+/** @param {boolean} [retry] */
+function openOverview(retry = true) {
+  request++;
+  pending = false;
+  focus = null;
+  page = null;
+  history = [];
+  chosen = 0;
+  detail.textContent = 'Выберите категорию или кластер на карте.';
+  setView(1, 0, 0);
+  render(true);
+  if (retry && !overview) void loadOverview();
+}
+
+/** @param {number} value @param {number} tx @param {number} ty */
+function setView(value, tx, ty) {
+  scale = value;
+  x = tx;
+  y = ty;
+  scene.setAttribute('transform', 'translate(' + x + ' ' + y + ') scale(' + scale + ')');
+}
+
+/** @param {number} factor @param {Point} p */
+function zoom(factor, p) {
+  const value = Math.min(8, Math.max(.65, scale * factor));
+  setView(value, p.x - (p.x - x) * value / scale, p.y - (p.y - y) * value / scale);
+}
+
+back.addEventListener('click', () => openOverview());
+next.addEventListener('click', () => {
+  if (focus && page?.next && !pending) void loadPage(focus, page.next, [...history, after]);
+});
+prev.addEventListener('click', () => {
+  if (focus && history.length && !pending) void loadPage(focus, history[history.length - 1], history.slice(0, -1));
+});
+document.querySelectorAll('[data-mode]').forEach(control => control.addEventListener('click', () => {
+  mode = control.getAttribute('data-mode');
+  document.querySelectorAll('[data-mode]').forEach(row => row.setAttribute('aria-pressed', String(row === control)));
+  openOverview();
+}));
+refresh.hidden = !!demo;
+refresh.addEventListener('click', async () => {
+  refresh.disabled = true;
+  try {
+    const scan = await fetchData('/api/universe/scan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    openOverview(false);
+    await loadOverview();
+    if (scan.errors) detail.textContent = 'Часть файлов недоступна: ' + scan.errors;
+  } catch {
+    detail.textContent = 'Не удалось обновить документы.';
+  } finally {
+    refresh.disabled = false;
+  }
+});
+
+svg.addEventListener('wheel', event => {
+  event.preventDefault();
+  const matrix = svg.getScreenCTM();
+  if (!matrix) return;
+  const p = new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse());
+  zoom(Math.exp(-event.deltaY * .001), p);
+}, { passive: false });
+/** @type {{id:number,x:number,y:number}|null} */ let drag = null;
+svg.addEventListener('pointerdown', event => {
+  if (drag || /** @type {Element} */ (event.target).closest('.universe-node')) return;
+  drag = { id: event.pointerId, x: event.clientX, y: event.clientY };
+  svg.setPointerCapture(event.pointerId);
+});
+svg.addEventListener('pointermove', event => {
+  if (!drag || drag.id !== event.pointerId) return;
+  const matrix = svg.getScreenCTM();
+  if (!matrix) return;
+  setView(scale, x + (event.clientX - drag.x) / matrix.a, y + (event.clientY - drag.y) / matrix.d);
+  drag.x = event.clientX;
+  drag.y = event.clientY;
+});
+for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+  svg.addEventListener(event, e => {
+    if (drag?.id === /** @type {PointerEvent} */ (e).pointerId) drag = null;
+  });
+}
+button('reset').addEventListener('click', () => setView(1, 0, 0));
+button('zoom-in').addEventListener('click', () => zoom(1.28, { x: 0, y: 0 }));
+button('zoom-out').addEventListener('click', () => zoom(1 / 1.28, { x: 0, y: 0 }));
+
+for (const { name, color } of categories) {
+  const row = document.createElement('button');
+  const dot = document.createElement('i'), labelNode = document.createElement('span'), count = document.createElement('strong');
+  labelNode.textContent = name;
+  dot.setAttribute('aria-hidden', 'true');
+  row.style.setProperty('--accent', color);
+  row.dataset.group = name;
+  row.append(dot, labelNode, count);
+  row.addEventListener('click', () => open(name));
+  legend.append(row);
+}
+drawGrid();
+render();
+void loadOverview();
+
 export {};
