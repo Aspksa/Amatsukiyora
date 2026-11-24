@@ -3,6 +3,7 @@ on: [push, pull_request]
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
@@ -14,6 +15,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - run: python launch.py --check
+      - if: runner.os == 'Windows'
+        shell: cmd
+        run: call start.bat --check
       - run: npm install --global typescript@5.9.3
       - run: tsc -p tsconfig.json
+      - run: git diff --exit-code --ignore-space-at-eol -- web/brain.js
       - run: python -m unittest discover -s tests
