@@ -1,8 +1,10 @@
 // @ts-check
+import { askCloud } from "./cloud-settings.js";
 /** @typedef {{id:number, group:string, label:string, excerpt?:string}} Match */
 /** @typedef {{memory:number, documents:number, indexed:number, links:number, routes:{source:string,target:string,count:number}[]}} Summary */
 /** @typedef {{label:string, connections:string[]}} Selection */
 /** @typedef {{
+ *  cloud?:ReturnType<import("./cloud-settings.js").startCloudSettings>,
  *  overview:()=>Summary|null,
  *  selection:()=>Selection|null,
  *  search:(query:string)=>Promise<Match[]>,
@@ -19,6 +21,9 @@ export function startChat(context) {
   const input = /** @type {HTMLInputElement} */ (document.getElementById('chat-input'));
   const submit = form.querySelector('button');
   let busy = false;
+  let conversationRevision = -1;
+  /** @type {import("./cloud-settings.js").ChatMessage[]} */
+  let conversation = [];
 
   /** @param {string} text @param {boolean} [own] */
   function message(text, own = false) {
@@ -32,7 +37,7 @@ export function startChat(context) {
     history.append(card);
     if (history.childElementCount > 60) history.firstElementChild.remove();
     history.scrollTop = history.scrollHeight;
-    return { card, body };
+    return { card, body, speaker };
   }
 
   /** @param {HTMLElement} parent @param {Match} match */
@@ -97,8 +102,35 @@ export function startChat(context) {
     submit.disabled = true;
     message(prompt, true);
     input.value = '';
-    const reply = message('Ищу на карте…');
+    const cloud = context.cloud?.active();
+    const reply = message(cloud ? 'Жду ответ модели…' : 'Ищу на карте…');
+    if (cloud) reply.speaker.textContent = 'Cloud.ru';
     try {
+      if (cloud) {
+        const revision = context.cloud.revision();
+        if (conversationRevision !== revision) {
+          conversation = [];
+          conversationRevision = revision;
+        }
+        /** @type {import("./cloud-settings.js").ChatMessage} */
+        const userMessage = { role: 'user', content: prompt };
+        const shareContext = context.cloud.includeContext();
+        const overview = shareContext ? context.overview() : null;
+        const selection = shareContext ? context.selection() : null;
+        const mapContext = shareContext ? JSON.stringify({
+          statistics: overview && { records: overview.memory, documents: overview.documents, links: overview.links },
+          selection,
+        }).slice(0, 2000) : '';
+        const messages = [...conversation, userMessage];
+        const answer = await askCloud(messages, mapContext);
+        reply.body.textContent = answer;
+        if (!shareContext && context.cloud.revision() === revision) {
+          /** @type {import("./cloud-settings.js").ChatMessage} */
+          const assistantMessage = { role: 'assistant', content: Array.from(answer).slice(0, 2000).join('') };
+          conversation = [...messages, assistantMessage].slice(-8);
+        }
+        return;
+      }
       const summary = commonAnswer(prompt);
       if (summary) {
         reply.body.textContent = summary;
@@ -112,13 +144,19 @@ export function startChat(context) {
         reply.body.textContent = 'Укажите имя файла, название записи или фразу из документа.';
         return;
       }
+      if (Array.from(query).length > 200) {
+        reply.body.textContent = 'Для локального поиска сократите фразу до 200 символов.';
+        return;
+      }
       const matches = await context.search(query);
       reply.body.textContent = matches.length
         ? 'Вот совпадения по запросу «' + query + '». Выберите, что открыть на карте.'
         : 'Совпадений по запросу «' + query + '» нет. Попробуйте короткую фразу или часть имени файла.';
       for (const match of matches) result(reply.card, match);
-    } catch {
-      reply.body.textContent = 'Поиск временно недоступен. Попробуйте ещё раз.';
+    } catch (error) {
+      reply.body.textContent = cloud
+        ? (error instanceof Error ? error.message : 'Cloud.ru недоступен.')
+        : 'Поиск временно недоступен. Попробуйте ещё раз.';
     } finally {
       busy = false;
       submit.disabled = false;

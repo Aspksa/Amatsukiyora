@@ -6,12 +6,15 @@ import json
 import webbrowser
 import argparse
 from urllib.parse import urlsplit, parse_qs
+import cloudru
 import universe
 
 ROOT = Path(__file__).resolve().parent
 CATEGORIES = ("Знания", "Навыки", "Опыт", "Личность")
 DB = ROOT / "data" / "memory.db"
 DOCUMENTS = ROOT / "Aspksa" / "Документы"
+CLOUD_SETTINGS = "/api/cloudru/settings"
+CLOUD_CHAT = "/api/cloudru/chat"
 
 @contextmanager
 def connect():
@@ -33,6 +36,10 @@ def init():
             target INTEGER NOT NULL REFERENCES memory(id),
             CHECK(source < target), PRIMARY KEY(source,target))""")
         universe.init(db)
+        db.execute("""CREATE TABLE IF NOT EXISTS cloudru_settings (
+            id INTEGER PRIMARY KEY CHECK(id = 1),
+            api_key TEXT NOT NULL,
+            model TEXT NOT NULL DEFAULT '')""")
 
 def add_link(source, target):
     if type(source) is not int or type(target) is not int or source == target:
@@ -42,6 +49,75 @@ def add_link(source, target):
     source, target = sorted((source, target))
     with connect() as db:
         db.execute("INSERT OR IGNORE INTO memory_links(source,target) VALUES (?,?)", (source,target))
+
+def cloud_settings():
+    with connect() as db:
+        return db.execute("SELECT api_key,model FROM cloudru_settings WHERE id=1").fetchone() or ("", "")
+
+
+def update_cloud_settings(data):
+    action = data.get("action")
+    if action == "disconnect":
+        with connect() as db:
+            db.execute("PRAGMA secure_delete=ON")
+            db.execute("DELETE FROM cloudru_settings WHERE id=1")
+        return {"hasKey": False, "model": "", "models": []}
+
+    if action not in ("models", "select"):
+        raise ValueError()
+    saved_key, saved_model = cloud_settings()
+    key = data.get("apiKey", saved_key) if action == "models" else saved_key
+    if not isinstance(key, str) or not 1 <= len(key) <= 2048 or not all(33 <= ord(ch) <= 126 for ch in key):
+        raise ValueError()
+
+    if action == "select":
+        model = data.get("model")
+        if not isinstance(model, str) or not 1 <= len(model) <= 250:
+            raise ValueError()
+        if model not in cloudru.models(key):
+            raise cloudru.CloudError("Выберите доступную модель Cloud.ru.")
+        with connect() as db:
+            updated = db.execute("UPDATE cloudru_settings SET model=? WHERE id=1 AND api_key=?", (model, key))
+            if not updated.rowcount:
+                raise cloudru.CloudError("Настройки Cloud.ru изменились. Обновите список моделей.")
+        return {"hasKey": True, "model": model}
+
+    available = cloudru.models(key)
+    model = saved_model if key == saved_key and saved_model in available else ""
+    if "apiKey" not in data and model == saved_model:
+        return {"hasKey": True, "model": model, "models": available}
+
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        current = db.execute("SELECT api_key,model FROM cloudru_settings WHERE id=1").fetchone() or ("", "")
+        if current != (saved_key, saved_model):
+            raise cloudru.CloudError("Настройки Cloud.ru изменились. Обновите список моделей.")
+        db.execute("PRAGMA secure_delete=ON")
+        db.execute("""INSERT INTO cloudru_settings(id,api_key,model) VALUES (1,?,?)
+            ON CONFLICT(id) DO UPDATE SET api_key=excluded.api_key, model=excluded.model""", (key, model))
+    return {"hasKey": True, "model": model, "models": available}
+
+
+def cloud_chat(data):
+    messages = data.get("messages")
+    map_context = data.get("mapContext", "")
+    if not isinstance(messages, list) or not 1 <= len(messages) <= 9:
+        raise ValueError()
+    for index, message in enumerate(messages):
+        role = "assistant" if index % 2 else "user"
+        if not isinstance(message, dict) or message.get("role") != role:
+            raise ValueError()
+        content = message.get("content")
+        if not isinstance(content, str) or not 1 <= len(content.strip()) <= 2000:
+            raise ValueError()
+    if len(messages) % 2 == 0 or not isinstance(map_context, str) or len(map_context) > 2000:
+        raise ValueError()
+    key, model = cloud_settings()
+    if not key or not model:
+        raise cloudru.CloudError("Подключите Cloud.ru и выберите модель в настройках.")
+    messages = [{"role": msg["role"], "content": msg["content"]} for msg in messages]
+    return {"answer": cloudru.chat(key, model, messages, map_context)}
+
 
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -56,6 +132,11 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
     def do_GET(self):
         url = urlsplit(self.path)
+        if url.path == CLOUD_SETTINGS:
+            if self.headers.get("Host") != f"127.0.0.1:{self.server.server_port}":
+                return self.reply(403, {"error": "host"})
+            key, model = cloud_settings()
+            return self.reply(200, {"hasKey": bool(key), "model": model})
         if url.path in ("/api/universe", "/api/universe/page", "/api/universe/search", "/api/universe/chat-search"):
             try:
                 q = parse_qs(url.query)
@@ -83,15 +164,23 @@ class Handler(SimpleHTTPRequestHandler):
             rows = db.execute("SELECT id,category,label FROM memory ORDER BY id DESC LIMIT 4800").fetchall()
         self.reply(200, [dict(row) for row in rows])
     def do_POST(self):
-        if self.path not in ("/api/memory", "/api/links", "/api/universe/scan", "/api/universe/document-link"):
+        if self.path not in ("/api/memory", "/api/links", "/api/universe/scan", "/api/universe/document-link", CLOUD_SETTINGS, CLOUD_CHAT):
             return self.reply(404, {"error":"not found"})
         if self.headers.get("Origin") != f"http://127.0.0.1:{self.server.server_port}":
             return self.reply(403, {"error":"origin"})
+        cloud_request = self.path in (CLOUD_SETTINGS, CLOUD_CHAT)
+        if cloud_request and self.headers.get("Host") != f"127.0.0.1:{self.server.server_port}":
+            return self.reply(403, {"error": "host"})
         try:
             length = int(self.headers.get("Content-Length", "0"))
-            if not 0 < length <= 4096 or self.headers.get_content_type() != "application/json":
+            if not 0 < length <= (131072 if self.path == CLOUD_CHAT else 4096) or self.headers.get_content_type() != "application/json":
                 raise ValueError()
             data = json.loads(self.rfile.read(length))
+            if cloud_request:
+                if not isinstance(data, dict):
+                    raise ValueError()
+                result = cloud_chat(data) if self.path == CLOUD_CHAT else update_cloud_settings(data)
+                return self.reply(200, result)
             if self.path == "/api/universe/scan":
                 with connect() as db:
                     result = universe.scan(db,DOCUMENTS)
@@ -112,6 +201,8 @@ class Handler(SimpleHTTPRequestHandler):
             category, label = data["category"], data["label"]
             if category not in CATEGORIES or not isinstance(label, str) or not 1 <= len(label.strip()) <= 200:
                 raise ValueError()
+        except cloudru.CloudError as error:
+            return self.reply(502, {"error": str(error)})
         except (ValueError, TypeError, KeyError, UnicodeError):
             return self.reply(400, {"error":"invalid input"})
         with connect() as db:

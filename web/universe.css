@@ -136,3 +136,36 @@ body {
   .route-current, .core-aura, .scene-content, .core-rotor, .selection-ring, .cluster-signal { filter: drop-shadow(0 0 2px currentColor); animation: none; }
   .orbit-scanner, .core-wave { display: none; }
 }
+
+.chat-heading > div { min-width: 0; overflow-wrap: anywhere; }
+.chat-heading .chat-settings-button { margin-inline-start: auto; flex-shrink: 0; }
+.map-chat:has(.chat-options:not([hidden])) { grid-template-rows: auto auto minmax(0, 1fr) auto; }
+.chat-options:not([hidden]) { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; font-size: 12px; }
+.chat-options select, #cloud-settings input, #cloud-settings select, #cloud-settings button {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #355259;
+  border-radius: 6px;
+  background: #111f29;
+  color: var(--text);
+  font: inherit;
+}
+#chat-context-option:not([hidden]) { display: inline-flex; align-items: center; gap: 4px; }
+#cloud-settings {
+  width: min(410px, calc(100% - 32px));
+  padding: 20px;
+  border: 1px solid #355259;
+  border-radius: 12px;
+  background: #0c1821;
+  color: var(--text);
+}
+#cloud-settings::backdrop { background: #040a10bb; }
+#cloud-connection { display: grid; gap: 10px; }
+.settings-heading, .settings-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.settings-heading { justify-content: space-between; }
+.settings-heading h2 { margin: 0; font-size: 18px; }
+#cloud-settings button { cursor: pointer; }
+#cloud-settings button:disabled { opacity: .6; cursor: default; }
+#cloud-connect { color: var(--cyan); }
+#cloud-settings p { margin: 0; color: var(--muted); font-size: 13px; }
+#cloud-status { min-height: 1.4em; }

@@ -28,6 +28,15 @@
         <circle cx="16" cy="16" r="13"/><ellipse cx="16" cy="16" rx="7.5" ry="13" transform="rotate(42 16 16)"/><circle cx="16" cy="16" r="2.4"/>
       </svg>
       <div><h1 id="chat-title">Чат карты</h1><span id="chat-source">Локальные данные</span></div>
+      <button id="cloud-settings-open" class="chat-settings-button" type="button" aria-haspopup="dialog" hidden>⚙️ Настройки</button>
+    </div>
+    <div class="chat-options" id="cloud-chat-options" hidden>
+      <label for="chat-mode">Режим</label>
+      <select id="chat-mode">
+        <option value="local">Локальный поиск</option>
+        <option value="cloud">Cloud.ru</option>
+      </select>
+      <label id="chat-context-option" hidden><input id="chat-context" type="checkbox"> Передать контекст карты</label>
     </div>
     <div id="chat-history" class="chat-history" role="log" aria-label="Сообщения чата" tabindex="0"></div>
     <form id="chat-form" class="chat-form">
@@ -37,6 +46,24 @@
     </form>
   </aside>
 </main>
+<dialog id="cloud-settings" aria-labelledby="cloud-settings-title">
+  <form id="cloud-connection">
+    <div class="settings-heading">
+      <h2 id="cloud-settings-title">Настройки Cloud.ru</h2>
+      <button id="cloud-settings-close" type="button" aria-label="Закрыть настройки">×</button>
+    </div>
+    <label for="cloud-key">API-ключ Foundation Models</label>
+    <input id="cloud-key" type="password" autocomplete="off" spellcheck="false" maxlength="2048" aria-describedby="cloud-key-note">
+    <p id="cloud-key-note">Ключ автоматически сохраняется в локальной базе после проверки.</p>
+    <div class="settings-actions">
+      <button id="cloud-connect" type="submit">Подключить</button>
+      <button id="cloud-disconnect" type="button" hidden>Отключить и удалить ключ</button>
+    </div>
+    <label for="cloud-model">Модель чата</label>
+    <select id="cloud-model" disabled><option value="">Выберите модель</option></select>
+    <p id="cloud-status" role="status"></p>
+  </form>
+</dialog>
 <script type="module" src="universe.js"></script>
 </body>
 </html>

@@ -1,5 +1,6 @@
 // @ts-check
 import { startChat } from "./chat.js";
+import { startCloudSettings } from "./cloud-settings.js";
 /** @typedef {{start:number, end:number, count:number}} Bin */
 /** @typedef {{name:string, count:number, bins:Bin[]}} Group */
 /** @typedef {{source:string, target:string, count:number}} Route */
@@ -483,6 +484,7 @@ function getDemoMatchPage(match) {
 }
 
 startChat({
+  cloud: demo ? null : startCloudSettings(),
   overview: () => overview,
   selection: getSelection,
   search: query => {
