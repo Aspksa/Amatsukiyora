@@ -25,6 +25,17 @@ const mapStatus = get('map-status');
 const mapNotice = get('map-notice');
 let overviewFailed = false;
 const selectionLabel = get('chat-selection');
+const viewport = document.querySelector('.map-viewport');
+const mapPanel = /** @type {HTMLElement} */ (viewport.parentElement);
+const workspace = get('workspace');
+const tooltip = get('map-tooltip');
+/** @type {Map<string,{button:HTMLButtonElement,count:HTMLOutputElement}>} */
+const directoryRows = new Map();
+const layoutButtons = Array.from(document.querySelectorAll('button[data-layout]'));
+const themeControl = /** @type {HTMLSelectElement} */ (get('map-theme'));
+const routesControl = /** @type {HTMLInputElement} */ (get('map-routes'));
+const labelsControl = /** @type {HTMLInputElement} */ (get('map-labels'));
+const display = { layout: 'orbit', theme: 'night', routes: true, labels: true };
 const format = new Intl.NumberFormat('ru-RU');
 const fmt = (/** @type {number} */ value) => format.format(value);
 const defaults = { start: 1, end: Number.MAX_SAFE_INTEGER };
@@ -57,9 +68,19 @@ function point(degrees, radius) {
   return { x: radius * Math.cos(a), y: radius * Math.sin(a) };
 }
 
-const angle = (/** @type {number} */ i) => -90 + i * 72;
+const angle = (/** @type {number} */ i) => -90 + i * 360 / categories.length;
 const indexOf = (/** @type {string} */ name) => categories.findIndex(category => category.name === name);
-const categoryColor = (/** @type {string} */ name) => categories[indexOf(name)]?.color || 'var(--muted)';
+const paperColors = ['#406a91', '#227361', '#926025', '#754f9b', '#36735e', '#944d58'];
+const categoryColor = (/** @type {string} */ name) => paperColors[indexOf(name)] || '#756483';
+/** @param {number} index */
+function mapColor(index) {
+  return display.theme === 'paper' ? paperColors[index] : categories[index].color;
+}
+
+/** @param {number} index */
+function groupCenter(index) {
+  return point(angle(index), display.layout === 'sectors' ? 286 : 204);
+}
 const isDocument = (/** @type {string} */ name) => name === 'Документы';
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 /** @type {Match[]} */ let neighbors = [];
@@ -104,7 +125,6 @@ function activate(node, title, anchor, action) {
   node.setAttribute('aria-label', title);
   node.dataset.anchorX = String(anchor.x);
   node.dataset.anchorY = String(anchor.y);
-  shape('title', {}, node).textContent = title;
   node.addEventListener('click', action);
   node.addEventListener('keydown', event => {
     const key = /** @type {KeyboardEvent} */ (event).key;
@@ -143,79 +163,98 @@ function drawRoute(parent, d, color, count, animated = false) {
 }
 
 function drawGrid() {
-  shape('circle', { r: 497, fill: 'url(#orbit-nebula)' }, grid);
-  for (const r of [99, 132, 179, 213, 249, 291, 334, 374, 421, 452, 486, 500]) {
-    shape('circle', { r, fill: 'none', stroke: '#6e9aa6', 'stroke-width': r === 500 ? 1.1 : .73, opacity: r >= 421 ? .23 : .12 }, grid);
+  grid.replaceChildren();
+  shape('circle', { r: 489, fill: 'url(#orbit-nebula)' }, grid);
+  if (display.layout === 'orbit' || focus) {
+    for (const r of [110, 166, 204, 259, 311, 370, 418, 476]) {
+      shape('circle', { r, fill: 'none', stroke: 'var(--map-grid)', 'stroke-width': r === 476 ? 1.25 : .8,
+        opacity: r === 476 || r === 204 ? .27 : .14, 'stroke-dasharray': r === 418 ? '2 5' : 'none' }, grid);
+    }
+    for (let i = 0; i < 72; i++) {
+      const a = i * 5;
+      const p = point(a, i % 6 ? 479 : 473), q = point(a, 486);
+      shape('line', { x1: p.x, y1: p.y, x2: q.x, y2: q.y, stroke: 'var(--map-grid)', opacity: i % 6 ? .23 : .54 }, grid);
+    }
+  } else {
+    shape('circle', { r: 286, fill: 'none', stroke: 'var(--map-grid)', 'stroke-width': 1, 'stroke-dasharray': '4 8', opacity: .27 }, grid);
+    shape('circle', { r: 109, fill: 'none', stroke: 'var(--map-grid)', 'stroke-width': 1, opacity: .27 }, grid);
   }
-  for (let i = 0; i < 96; i++) {
-    const a = i * 3.75;
-    const p = point(a, i % 4 ? 496 : 490), q = point(a, 501);
-    shape('line', { x1: p.x, y1: p.y, x2: q.x, y2: q.y, stroke: '#6a98a6', opacity: i % 4 ? .15 : .33 }, grid);
+  for (let i = 0; i < 74; i++) {
+    const p = point(i * 137.508, 125 + (i * 319 % 351));
+    shape('circle', { cx: p.x, cy: p.y, r: i % 14 === 0 ? 1.65 : .9, fill: 'var(--map-grid)', opacity: i % 14 === 0 ? .38 : .16 }, grid);
   }
-  for (let i = 0; i < 115; i++) {
-    const p = point(i * 137.508, 110 + (i * 641 % 377));
-    shape('circle', { cx: p.x, cy: p.y, r: i % 17 === 0 ? 1.55 : .65, fill: '#a6c8d5', opacity: i % 17 === 0 ? .38 : .19 }, grid);
-  }
-  const scanner = shape('g', { class: 'orbit-scanner' }, grid);
-  shape('path', { d: arc(-128, -92, 500), stroke: '#79c9c8', 'stroke-width': 1.2, opacity: .38, fill: 'none' }, scanner);
-  const scan = point(-92, 500);
-  shape('circle', { cx: scan.x, cy: scan.y, r: 2, fill: '#a8e4dd', opacity: .72 }, scanner);
 }
 
 /** @param {SVGElement} parent */
 function drawCore(parent) {
-  for (let i = 0; i < 2; i++) {
-    shape('circle', { r: 78, fill: 'none', stroke: '#64ebe8', 'stroke-width': 1.3, class: 'core-wave', style: 'animation-delay:' + i * -2.9 + 's' }, parent);
+  shape('circle', { r: 104, fill: 'none', stroke: 'var(--map-glow)', 'stroke-width': 1.2,
+    opacity: .22, class: 'core-aura' }, parent);
+  shape('circle', { r: 94, fill: 'none', stroke: 'var(--map-glow)', 'stroke-width': 1.3,
+    class: 'core-wave' }, parent);
+  const rotor = shape('g', { class: 'core-rotor', 'aria-hidden': 'true' }, parent);
+  for (const degrees of [-90, 30, 150]) {
+    shape('path', { d: arc(degrees, degrees + 34, 89), stroke: 'var(--map-glow)', 'stroke-width': 2.2,
+      'stroke-linecap': 'round', fill: 'none', opacity: .7 }, rotor);
   }
-  shape('circle', { r: 75, fill: 'none', stroke: '#69c5bf', 'stroke-width': 1, opacity: .52, class: 'core-aura' }, parent);
-  const nucleus = shape('circle', { r: 63, fill: 'url(#core-light)', stroke: '#63e5df', 'stroke-width': 1.7, color: '#63e5df' }, parent);
+  const nucleus = shape('circle', { r: 73, fill: 'url(#core-light)', stroke: 'var(--map-glow)', 'stroke-width': 1.6, color: 'var(--map-glow)' }, parent);
   activate(nucleus, 'Общий вид', { x: 0, y: 0 }, () => {
     openOverview();
     svg.focus();
   });
-  shape('circle', { r: 57, fill: 'none', stroke: '#63e5df', opacity: .32, 'pointer-events': 'none' }, parent);
-  const rotor = shape('g', { class: 'core-rotor', 'aria-hidden': 'true' }, parent);
-  for (const degrees of [-92, 28, 148]) {
-    shape('path', { d: arc(degrees, degrees + 36, 76), stroke: '#6ff5eb', 'stroke-width': 2, 'stroke-linecap': 'round', fill: 'none', opacity: .8 }, rotor);
-    const p = point(degrees + 36, 76);
-    shape('circle', { cx: p.x, cy: p.y, r: 2.2, fill: '#f2ffff' }, rotor);
-  }
+  shape('circle', { r: 65, fill: 'none', stroke: 'var(--map-glow)', opacity: .25, 'pointer-events': 'none' }, parent);
   const count = focus ? page?.items.length || 0 : (overview?.memory || 0) + (overview?.documents || 0);
-  label(parent, { x: 0, y: -19 }, focus?.name || 'Ядро', '#b7e7ec', 16).classList.add('core-caption');
-  screenLabel(label(parent, { x: 0, y: 13 }, fmt(count), '#f4feff', 32), 15).classList.add('core-count');
-  label(parent, { x: 0, y: 35 }, focus ? 'Общий вид' : 'записей и файлов', '#adc4d9', 12).classList.add('core-caption');
+  label(parent, { x: 0, y: -19 }, 'Ядро', 'var(--map-core)', 17).classList.add('core-caption');
+  screenLabel(label(parent, { x: 0, y: 20 }, fmt(count), 'var(--map-fg)', 45), 16).classList.add('core-count');
+  label(parent, { x: 0, y: 43 }, focus ? 'на странице' : 'записей и файлов', 'var(--map-muted)', 12).classList.add('core-caption');
 }
 
 /** @param {Group} group @param {number} i @param {SVGElement} nodes @param {number} maximum */
 function drawGroup(group, i, nodes, maximum) {
-  const { color, name } = categories[i];
+  const { name } = categories[i];
+  const color = mapColor(i);
   const a = angle(i);
   const width = group.bins[0] ? group.bins[0].end - group.bins[0].start + 1 : 1;
-  const hub = point(a, 137);
-  const caption = point(a, 333);
+  const hub = groupCenter(i);
+  const sector = display.layout === 'sectors';
+  const caption = point(a, sector ? 389 : 343);
   const clusters = shape('g', { class: 'overview-clusters' }, nodes);
-  shape('path', { d: arc(a - 28, a + 28, 472), stroke: color, 'stroke-width': .9, opacity: .25, fill: 'none' }, nodes);
+  if (sector) {
+    const vertices = Array.from({ length: 6 }, (_, index) => {
+      const p = point(index * 60, 101);
+      return xy({ x: hub.x + p.x, y: hub.y + p.y });
+    });
+    shape('polygon', { points: vertices.join(' '), stroke: color, 'stroke-width': 1.4,
+      'stroke-opacity': .46, fill: color, 'fill-opacity': .09, 'pointer-events': 'none' }, nodes);
+  } else {
+    const outerLeft = point(a - 25, 444), outerRight = point(a + 25, 444);
+    const innerLeft = point(a - 25, 154), innerRight = point(a + 25, 154);
+    shape('path', { d: `M ${xy(innerLeft)} L ${xy(outerLeft)} A 444 444 0 0 1 ${xy(outerRight)} L ${xy(innerRight)} A 154 154 0 0 0 ${xy(innerLeft)} Z`,
+      fill: color, 'fill-opacity': .043, stroke: color, 'stroke-opacity': .16, 'stroke-width': .9, 'pointer-events': 'none' }, nodes);
+    shape('path', { d: arc(a - 20, a + 20, 443), stroke: color, 'stroke-width': 3, opacity: .58, fill: 'none' }, nodes);
+  }
+  nodes.append(clusters);
 
   for (const bin of group.bins) {
     const hit = matches.some(match => match.group === name && bin.start <= match.id && match.id <= bin.end);
     const slot = (bin.start - 1) / width;
     const range = name + ' · ' + fmt(bin.count);
     const outerAngle = a + ((slot % 8) - 3.5) * 5.9 + (slot >= 8 ? 1.8 : 0);
-    const outerRadius = 456 - Math.floor(slot / 8) * 24;
+    const outerRadius = sector ? 474 - Math.floor(slot / 8) * 18 : 458 - Math.floor(slot / 8) * 16;
     const outer = point(outerAngle, outerRadius);
-    const ring = shape('circle', { cx: outer.x, cy: outer.y, r: 9.2, fill: '#0e1c24', stroke: color, 'stroke-width': 1.2, color, class: hit ? 'orbit-token chat-map-hit' : 'orbit-token' }, clusters);
+    const ring = shape('circle', { cx: outer.x, cy: outer.y, r: 9.2, fill: 'var(--map-ink)', stroke: color, 'stroke-width': 1.2, color, class: hit ? 'orbit-token chat-map-hit' : 'orbit-token' }, clusters);
     activate(ring, 'Орбита: ' + range, outer, () => open(name, bin.start, bin.end, outer));
     shape('circle', { cx: outer.x, cy: outer.y, r: 5.6, fill: 'none', stroke: color, 'stroke-width': .8, opacity: .64, 'pointer-events': 'none' }, clusters);
     shape('circle', { cx: outer.x, cy: outer.y, r: 1.65, fill: color, opacity: .92, 'pointer-events': 'none' }, clusters);
     if (slot < 8 && bin.count > maximum * .24) {
       const satellite = point(outerAngle - 1.9, 477);
-      shape('circle', { cx: satellite.x, cy: satellite.y, r: 5.2, fill: '#0d1b23', stroke: color, 'stroke-width': .9, opacity: .64 }, clusters);
+      shape('circle', { cx: satellite.x, cy: satellite.y, r: 5.2, fill: 'var(--map-ink)', stroke: color, 'stroke-width': .9, opacity: .64 }, clusters);
       shape('circle', { cx: satellite.x, cy: satellite.y, r: 1.25, fill: color, opacity: .71 }, clusters);
     }
 
     const degrees = a + ((slot % 4) - 1.5) * 11.5;
-    const radius = 168 + Math.floor(slot / 4) * 35;
-    const p = point(degrees, radius);
+    const radius = 244 + Math.floor(slot / 4) * 32;
+    const shift = point(slot * 137.508, 31 + (slot % 3) * 17);
+    const p = sector ? { x: hub.x + shift.x, y: hub.y + shift.y } : point(degrees, radius);
     const cluster = shape('g', { color, class: 'micro-cluster' }, clusters);
     activate(cluster, 'Кластер: ' + range, p, () => open(name, bin.start, bin.end, p));
     cluster.dataset.cluster = clusterKey(name, bin);
@@ -229,7 +268,8 @@ function drawGroup(group, i, nodes, maximum) {
     const rows = Math.ceil(dots / 5);
     for (let dot = 0; dot < dots; dot++) {
       const dotAngle = degrees + (dot % 5 - 2) * (280 / radius);
-      const q = point(dotAngle, radius + (Math.floor(dot / 5) - (rows - 1) / 2) * 5.1);
+      const q = sector ? { x: p.x + (dot % 5 - 2) * 4.4, y: p.y + (Math.floor(dot / 5) - (rows - 1) / 2) * 4.4 }
+        : point(dotAngle, radius + (Math.floor(dot / 5) - (rows - 1) / 2) * 5.1);
       const signal = (slot * 7 + dot * 3 + i) % 13 === 0;
       shape('circle', { cx: q.x, cy: q.y, r: signal ? 2.05 : 1.55, fill: color, opacity: signal ? .95 : .64, class: signal ? 'cluster-signal' : '', 'pointer-events': 'none' }, cluster);
     }
@@ -241,46 +281,50 @@ function drawGroup(group, i, nodes, maximum) {
   }
   const category = shape('g', { color, class: 'category-target' }, nodes);
   activate(category, name === 'Работа' ? name : name + ' · ' + fmt(group.count), hub, () => open(name));
-  shape('circle', { cx: hub.x, cy: hub.y, r: 19, fill: 'transparent', stroke: 'none' }, category);
-  shape('circle', { cx: hub.x, cy: hub.y, r: 9, fill: '#0d1a22', stroke: color, 'stroke-width': 1.6,
+  shape('circle', { cx: hub.x, cy: hub.y, r: 22, fill: color, 'fill-opacity': .11, stroke: color,
+    'stroke-width': 1, 'stroke-opacity': .46 }, category);
+  shape('circle', { cx: hub.x, cy: hub.y, r: 12, fill: 'var(--map-chrome)', stroke: color, 'stroke-width': 1.6,
     class: matches.some(match => match.group === name) ? 'chat-map-hit' : '' }, category);
-  shape('circle', { cx: hub.x, cy: hub.y, r: 3.3, fill: color, 'pointer-events': 'none' }, category);
-  const captionText = screenLabel(label(category, caption, name === 'Работа' ? name : name + '  ' + fmt(group.count), color, 15), 12);
-  captionText.classList.add('category-caption');
+  shape('circle', { cx: hub.x, cy: hub.y, r: 4, fill: color, 'pointer-events': 'none' }, category);
+  const showCount = name !== 'Работа';
+  shape('rect', { x: caption.x - 73, y: caption.y - 20, width: 146,
+    height: showCount ? 58 : 40, rx: 9, fill: color, 'fill-opacity': .12,
+    stroke: color, 'stroke-opacity': .38, 'stroke-width': 1, class: 'category-pill' }, category);
+  screenLabel(label(category, { x: caption.x, y: caption.y + 5 }, name, color, 21), 12).classList.add('category-caption');
+  if (showCount) screenLabel(label(category, { x: caption.x, y: caption.y + 27 }, fmt(group.count),
+    'var(--map-muted)', 16), 10).classList.add('category-count');
 }
 
 function drawOverview() {
-  if (!overview) return;
-  const routes = shape('g', {}, content), nodes = shape('g', {}, content);
-  const maximum = Math.max(1, ...overview.groups.flatMap(group => group.bins.map(bin => bin.count)));
-  overview.routes.forEach((route, i) => {
+  const routes = shape('g', { class: 'map-routes' }, content), nodes = shape('g', {}, content);
+  const groups = overview?.groups || [];
+  const maximum = Math.max(1, ...groups.flatMap(group => group.bins.map(bin => bin.count)));
+  overview?.routes.forEach((route, i) => {
     const from = indexOf(route.source), to = indexOf(route.target);
     if (from < 0 || to < 0) return;
     const a = angle(from), b = angle(to);
-    const hub = point(a, 137);
+    const hub = groupCenter(from), target = groupCenter(to);
     const distance = Math.min(Math.abs(from - to), categories.length - Math.abs(from - to));
-    const radius = distance === 1 ? 246 + i % 5 * 24 : 98 + i % 5 * 10;
+    const radius = distance === 1 ? 248 + i % 5 * 18 : 128 + i % 5 * 12;
     const d = from === to
-      ? 'M ' + xy(hub) + ' Q ' + xy(point(a - 18, 180)) + ' ' + xy(point(a, 187)) +
-        ' Q ' + xy(point(a + 18, 180)) + ' ' + xy(hub)
-      : track(a, b, 137, 137, radius);
+      ? 'M ' + xy(hub) + ' Q ' + xy(point(a - 15, Math.hypot(hub.x, hub.y) + 25)) + ' ' + xy(point(a, Math.hypot(hub.x, hub.y) + 33)) +
+        ' Q ' + xy(point(a + 15, Math.hypot(hub.x, hub.y) + 25)) + ' ' + xy(hub)
+      : display.layout === 'sectors' ? `M ${xy(hub)} Q ${xy(point(a, 126))} ${xy(target)}` : track(a, b, 204, 204, radius);
     const lane = shape('g', {}, routes);
     shape('title', {}, lane).textContent = route.source + ' / ' + route.target + ' · ' + fmt(route.count);
-    drawRoute(lane, d, categories[from].color, route.count, true);
+    drawRoute(lane, d, mapColor(from), route.count, route.count > 1);
   });
-  for (const group of overview.groups) {
-    const i = indexOf(group.name);
-    if (i < 0) continue;
-    drawGroup(group, i, nodes, maximum);
-  }
-  drawGroup({ name: 'Работа', count: 0, bins: [] }, indexOf('Работа'), nodes, maximum);
+  categories.forEach((category, index) => {
+    const group = groups.find(group => group.name === category.name) || { name: category.name, count: 0, bins: [] };
+    drawGroup(group, index, nodes, maximum);
+  });
 }
 
 /** @param {SVGElement} parent @param {Point} p @param {Match} item @param {number} priority @param {boolean} [offset] */
 function entryLabel(parent, p, item, priority, offset = false) {
   const name = item.label.length > 29 ? item.label.slice(0, 28) + '…' : item.label;
   const text = label(parent, { x: p.x + (offset ? 11 : 0), y: p.y - (offset ? 1 : 14) },
-    name, categoryColor(item.group), 13);
+    name, mapColor(indexOf(item.group)), 13);
   if (offset) text.setAttribute('text-anchor', 'start');
   screenLabel(text, priority === 3 ? 13 : 11);
   text.classList.add('entry-label');
@@ -307,8 +351,8 @@ function drawDetails(origin) {
   if (!focus || !page) return;
   const group = focus.name;
   const groupIndex = indexOf(group);
-  const color = categoryColor(group);
-  const routes = shape('g', {}, content), nodes = shape('g', {}, content);
+  const color = mapColor(groupIndex);
+  const routes = shape('g', { class: 'map-routes' }, content), nodes = shape('g', {}, content);
   const positions = new Map(page.items.map((item, i) => [item.id, entryPosition(i)]));
   const selected = new Set([chosen]);
   const selectedPoint = positions.get(chosen);
@@ -325,24 +369,24 @@ function drawDetails(origin) {
     const p = positions.get(edge.id);
     const active = edge.id === chosen;
     const lane = shape('g', { class: active ? 'direct-link' : 'detail-connection' }, routes);
-    drawRoute(lane, track(p.a, angle(i) + 4, p.r, 435, 374 + i * 9), categories[i].color, edge.count, active);
+    drawRoute(lane, track(p.a, angle(i) + 4, p.r, 435, 374 + i * 9), mapColor(i), edge.count, active);
   });
   categories.forEach((category, i) => {
     if (i === groupIndex) return;
     const p = point(angle(i) + 4, 455);
-    const station = shape('circle', { cx: p.x, cy: p.y, r: 8, stroke: category.color, fill: '#0b1627', 'stroke-width': 2, color: category.color,
+    const station = shape('circle', { cx: p.x, cy: p.y, r: 8, stroke: mapColor(i), fill: 'var(--map-chrome)', 'stroke-width': 2, color: mapColor(i),
       class: matches.some(match => match.group === category.name) ? 'chat-map-hit' : '' }, nodes);
     activate(station, category.name, p, () => open(category.name));
-    screenLabel(label(nodes, { x: p.x * .87, y: p.y * .87 + 25 }, category.name, category.color, 15), 11);
+    screenLabel(label(nodes, { x: p.x * .87, y: p.y * .87 + 25 }, category.name, mapColor(i), 15), 11);
   });
   if (selectedPoint) {
     const remote = neighbors.filter(node => node.group !== group || !positions.has(node.id));
     remote.forEach((neighbor, index) => {
       const p = point(-90 + index * 360 / remote.length, 395);
-      const accent = categoryColor(neighbor.group);
+      const accent = mapColor(indexOf(neighbor.group));
       const lane = shape('g', { class: 'direct-link' }, routes);
       drawRoute(lane, `M ${xy(selectedPoint)} Q ${xy({ x: p.x * .65, y: p.y * .65 })} ${xy(p)}`, accent, 8, true);
-      const node = entryShape(p, neighbor.group, nodes, 8, { fill: '#132532', stroke: accent, 'stroke-width': 2.5,
+      const node = entryShape(p, neighbor.group, nodes, 8, { fill: 'var(--map-chrome)', stroke: accent, 'stroke-width': 2.5,
         color: accent, class: 'connected-node', 'data-neighbor': neighbor.group + ':' + neighbor.id });
       activate(node, neighbor.label, p, () => { void inspectMatch(neighbor); });
       entryLabel(nodes, p, neighbor, 2);
@@ -357,7 +401,7 @@ function drawDetails(origin) {
     layer.classList.add('detail-node');
     if (highlighted) layer.classList.add('detail-node-related');
     const node = entryShape(p, group, layer, highlighted ? 8 : 6, {
-      fill: highlighted ? color : '#102338', stroke: color, 'stroke-width': highlighted ? 2.6 : 2, color,
+      fill: highlighted ? color : 'var(--map-chrome)', stroke: color, 'stroke-width': highlighted ? 2.6 : 2, color,
       'data-entry': item.id, 'data-kind': isDocument(group) ? 'document' : 'record',
     });
     if (hit) node.classList.add('chat-map-hit');
@@ -379,6 +423,9 @@ function renderMap(animate = false, origin = null) {
     selectionLabel.textContent = selected ? 'Узел: ' + selected.label : '';
   }
   updateMapNotice();
+  syncWorkspace();
+  hideTooltip();
+  drawGrid();
   svg.dataset.selected = String(!!chosen);
   svg.dataset.view = focus ? 'detail' : 'overview';
   content.replaceChildren();
@@ -467,6 +514,7 @@ async function loadOverview() {
     if (token === request) {
       overviewFailed = true;
       updateMapNotice();
+      syncWorkspace();
     }
   }
 }
@@ -549,6 +597,9 @@ let labelFrame = 0;
 /** @param {number} value @param {number} tx @param {number} ty */
 function setView(value, tx, ty) {
   scale = value;
+  const zoomValue = get('map-zoom-value');
+  if (zoomValue) zoomValue.textContent = Math.round(value * 100) + '%';
+  hideTooltip();
   x = tx;
   y = ty;
   scene.setAttribute('transform', 'translate(' + x + ' ' + y + ') scale(' + scale + ')');
@@ -582,7 +633,12 @@ function drawPaging(parent) {
 }
 
 svg.addEventListener('keydown', event => {
-  if (event.key === 'Escape') openOverview();
+  if (event.key === 'Escape') {
+    if (workspace.dataset.present === 'true') {
+      setPresentation(false);
+      get('map-present').focus({ preventScroll: true });
+    } else openOverview();
+  }
   else if (event.key === '0') setView(1, 0, 0);
   else if (event.key === '+' || event.key === '=') zoom(1.28, { x: 0, y: 0 });
   else if (event.key === '-') zoom(1 / 1.28, { x: 0, y: 0 });
@@ -703,8 +759,14 @@ function getDemoMatchPage(match) {
   };
 }
 
-/** @type {Match[]} */
-let matches = [];
+let matches = /** @type {Match[]} */ ([]);
+let directoryMatches = /** @type {Match[]} */ ([]);
+let assistantMatches = /** @type {Match[]} */ ([]);
+
+function refreshHighlights() {
+  matches = [...directoryMatches, ...assistantMatches];
+  renderMap();
+}
 let viewReady = false;
 let saveTimer = 0;
 /** @type {Map<string,Page>} */ const previewCache = new Map();
@@ -746,7 +808,7 @@ function drawPreviews() {
   previewLayer = shape('g', { class: 'overview-previews' }, content);
   for (const cluster of clusters) {
     const { group, position } = cluster;
-    const color = categoryColor(group);
+    const color = mapColor(indexOf(group));
     const detail = previewCache.get(cluster.key);
     const nodes = detail.items.slice(0, 5);
     const positions = new Map(nodes.map((item, i) => [item.id, {
@@ -754,13 +816,13 @@ function drawPreviews() {
     }]));
     for (const link of detail.links) {
       const a = positions.get(link.source), b = positions.get(link.target);
-      if (a && b) shape('path', { d: `M ${xy(a)} L ${xy(b)}`, stroke: color, opacity: .65, class: 'universe-route' }, previewLayer);
+      if (a && b) shape('path', { d: `M ${xy(a)} L ${xy(b)}`, stroke: color, opacity: .65, class: 'universe-route map-routes' }, previewLayer);
     }
     for (const item of nodes) {
       const p = positions.get(item.id);
       const match = { ...item, group };
       const hit = matches.some(row => row.group === group && row.id === item.id);
-      const node = entryShape(p, group, previewLayer, 4.5, { fill: '#132532', stroke: color, color,
+      const node = entryShape(p, group, previewLayer, 4.5, { fill: 'var(--map-chrome)', stroke: color, color,
         'stroke-width': 1.5, class: hit ? 'chat-map-hit' : '', 'data-preview-entry': item.id });
       activate(node, item.label, p, () => { void inspectMatch(match); });
       entryLabel(previewLayer, p, match, hit ? 2 : 1, true);
@@ -840,8 +902,213 @@ new ResizeObserver(() => {
   schedulePreviews();
 }).observe(svg);
 
+function syncWorkspace() {
+  const status = get('workspace-status');
+  const state = overviewFailed ? 'error' : overview ? 'ready' : 'loading';
+  if (status && state !== status.dataset.state) {
+    status.dataset.state = state;
+    status.lastElementChild.textContent = state === 'error' ? 'Карта недоступна'
+      : state === 'ready' ? 'Локальная база' : 'Загрузка';
+  }
+  const title = get('map-view-label');
+  if (title) {
+    const selection = page?.items.find(item => item.id === chosen);
+    title.textContent = selection?.label || focus?.name || 'Общий вид';
+    title.title = title.textContent;
+  }
+  for (const [name, row] of directoryRows) {
+    const group = overview?.groups.find(group => group.name === name);
+    row.count.textContent = group ? fmt(group.count) : name === 'Работа' ? '›' : '—';
+    if (focus?.name === name) row.button.setAttribute('aria-current', 'true');
+    else row.button.removeAttribute('aria-current');
+  }
+  const totals = { 'total-memory': overview?.memory, 'total-documents': overview?.documents, 'total-links': overview?.links };
+  for (const [id, value] of Object.entries(totals)) {
+    get(id).textContent = value === undefined ? '—' : fmt(value);
+  }
+  svg.dataset.routes = String(display.routes);
+  svg.dataset.labels = String(display.labels);
+  svg.dataset.layout = display.layout;
+  mapPanel.dataset.mapTheme = display.theme;
+  for (const button of layoutButtons) {
+    button.setAttribute('aria-pressed', String(button.getAttribute('data-layout') === display.layout));
+  }
+  themeControl.value = display.theme;
+  routesControl.checked = display.routes;
+  labelsControl.checked = display.labels;
+}
+
+function hideTooltip() {
+  if (tooltip) tooltip.hidden = true;
+}
+
+/** @param {SVGGraphicsElement} node */
+function showTooltip(node) {
+  const label = node.getAttribute('aria-label');
+  const matrix = node.getScreenCTM();
+  if (!matrix || !label) return;
+  const point = screenAnchor(node, matrix);
+  const bounds = viewport.getBoundingClientRect();
+  if (!withinMap(point, bounds)) return;
+  tooltip.textContent = label;
+  tooltip.hidden = false;
+  const w = tooltip.offsetWidth, h = tooltip.offsetHeight;
+  const left = Math.max(8, Math.min(bounds.width - w - 8, point.x - bounds.left + 10));
+  const top = Math.max(8, Math.min(bounds.height - h - 8, point.y - bounds.top - h - 12));
+  tooltip.style.left = left + 'px';
+  tooltip.style.top = top + 'px';
+}
+
+/** @param {boolean} active */
+function setPresentation(active) {
+  workspace.dataset.present = String(active);
+  get('map-present').setAttribute('aria-pressed', String(active));
+  get('map-present-label').textContent = active ? 'Вернуть панели' : 'Развернуть карту';
+  hideTooltip();
+  requestAnimationFrame(updateLabels);
+}
+
+/** @param {string} query */
+function findMatches(query) {
+  if (!demo) return fetchData('/api/universe/chat-search?' + new URLSearchParams({ q: query }));
+  return Promise.resolve(demoFullPages.flatMap(row => row.items
+    .filter(item => item.label.toLowerCase().includes(query.toLowerCase()))
+    .map(item => ({ id: item.id, group: row.group, label: item.label }))).slice(0, 8));
+}
+
+function bindWorkspace() {
+  const sections = get('map-sections');
+  const icons = ['✦', '⌘', '◐', '◉', '▤', '▦'];
+  categories.forEach((category, i) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'directory-section';
+    button.style.setProperty('--section-color', category.color);
+    const icon = document.createElement('i');
+    icon.textContent = icons[i];
+    icon.setAttribute('aria-hidden', 'true');
+    const name = document.createElement('span');
+    name.textContent = category.name;
+    const count = document.createElement('output');
+    count.setAttribute('aria-hidden', 'true');
+    button.append(icon, name, count);
+    button.addEventListener('click', () => open(category.name));
+    sections.append(button);
+    directoryRows.set(category.name, { button, count });
+  });
+
+  get('map-present').addEventListener('click', () => setPresentation(workspace.dataset.present !== 'true'));
+  get('map-zoom-in').addEventListener('click', () => zoom(1.28, { x: 0, y: 0 }));
+  get('map-zoom-out').addEventListener('click', () => zoom(1 / 1.28, { x: 0, y: 0 }));
+  for (const button of layoutButtons) {
+    button.addEventListener('click', () => {
+      const layout = button.getAttribute('data-layout');
+      if (layout === display.layout) return;
+      display.layout = layout;
+      openOverview();
+    });
+  }
+  routesControl.addEventListener('change', () => {
+    display.routes = routesControl.checked;
+    syncWorkspace();
+    saveView();
+  });
+  labelsControl.addEventListener('change', () => {
+    display.labels = labelsControl.checked;
+    syncWorkspace();
+    updateLabels();
+    saveView();
+  });
+  themeControl.addEventListener('change', () => {
+    display.theme = themeControl.value;
+    renderMap();
+    saveView();
+  });
+  svg.addEventListener('pointerover', event => {
+    if (event.pointerType === 'touch' || pointers.size) return;
+    const node = /** @type {SVGGraphicsElement|null} */ (/** @type {Element} */ (event.target).closest('.universe-node'));
+    if (node) showTooltip(node);
+  });
+  svg.addEventListener('pointerout', event => {
+    const node = /** @type {Element} */ (event.target).closest('.universe-node');
+    if (node && (!(event.relatedTarget instanceof Node) || !node.contains(event.relatedTarget))) hideTooltip();
+  });
+  svg.addEventListener('focusin', event => {
+    if (event.target instanceof SVGGraphicsElement && event.target.matches('.universe-node')) showTooltip(event.target);
+  });
+  svg.addEventListener('focusout', hideTooltip);
+
+  const search = /** @type {HTMLInputElement} */ (get('map-search-input'));
+  const results = get('map-search-results');
+  let timer = 0, sequence = 0;
+  function updateSearch() {
+    const query = search.value.trim();
+    const active = ++sequence;
+    window.clearTimeout(timer);
+    sections.hidden = !!query;
+    results.hidden = !query;
+    results.replaceChildren();
+    if (!query) {
+      if (directoryMatches.length) {
+        directoryMatches = [];
+        refreshHighlights();
+      }
+      return;
+    }
+    const notice = document.createElement('p');
+    notice.textContent = 'Поиск…';
+    results.append(notice);
+    timer = window.setTimeout(async () => {
+      try {
+        const found = /** @type {Match[]} */ (await findMatches(query));
+        if (active !== sequence) return;
+        directoryMatches = found;
+        refreshHighlights();
+        results.replaceChildren();
+        if (!found.length) {
+          notice.textContent = 'Совпадений нет.';
+          results.append(notice);
+        }
+        for (const item of found) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'map-search-result';
+          const name = document.createElement('strong');
+          name.textContent = item.label;
+          const group = document.createElement('small');
+          group.textContent = item.group;
+          button.append(name, group);
+          button.addEventListener('click', async () => {
+            if (!await inspectMatch(item)) {
+              notice.textContent = 'Не удалось открыть запись.';
+              results.append(notice);
+            }
+          });
+          results.append(button);
+        }
+      } catch {
+        if (active === sequence) notice.textContent = 'Поиск недоступен.';
+      }
+    }, 170);
+  }
+  search.addEventListener('input', updateSearch);
+  get('map-search-form').addEventListener('submit', event => { event.preventDefault(); updateSearch(); });
+  document.addEventListener('keydown', event => {
+    if (event.defaultPrevented || get('cloud-settings').hasAttribute('open')) return;
+    if (event.key === 'Escape' && workspace.dataset.present === 'true') {
+      setPresentation(false);
+      get('map-present').focus();
+    } else if (event.key === '/' && workspace.dataset.present !== 'true' &&
+        !(event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable]')) &&
+        !event.altKey && !event.ctrlKey && !event.metaKey) {
+      event.preventDefault();
+      search.focus();
+    }
+  });
+}
+
 function currentView() {
-  return { scale, x, y, focus, after, chosen, history };
+  return { scale, x, y, focus, after, chosen, history, display: { ...display } };
 }
 
 function saveView() {
@@ -887,35 +1154,31 @@ startChat({
   local: !!demo,
   categoryColor,
   highlight: hits => {
-    matches = hits;
-    renderMap();
+    assistantMatches = hits;
+    refreshHighlights();
   },
   restore: async view => {
     await ready;
     if (view) {
+      if (view.display) Object.assign(display, view.display);
       if (view.focus && indexOf(view.focus.name) >= 0) {
         await loadPage(view.focus, view.after, view.history || []);
         const selected = page?.items.find(item => item.id === view.chosen);
         if (selected) choose(selected);
       }
       setView(view.scale, view.x, view.y);
+      renderMap();
     }
     viewReady = true;
   },
   overview: () => overview,
   selection: getSelection,
-  search: query => {
-    if (!demo) return fetchData('/api/universe/chat-search?' + new URLSearchParams({ q: query }));
-    const matches = demoFullPages.flatMap(row => row.items
-      .filter(item => item.label.toLowerCase().includes(query.toLowerCase()))
-      .map(item => ({ id: item.id, group: row.group, label: item.label })));
-    return Promise.resolve(matches.slice(0, 8));
-  },
+  search: findMatches,
   inspect: inspectMatch,
 });
 
 if (demo) get('chat-source').textContent = 'Демонстрационные данные';
-drawGrid();
+bindWorkspace();
 renderMap();
 
 export {};

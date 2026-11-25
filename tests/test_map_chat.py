@@ -57,6 +57,16 @@ class MapChatTest(unittest.TestCase):
         self.assertEqual(len(previous["turns"]), 3)
         self.assertEqual(previous["view"], view)
 
+    def test_map_display_is_restored_without_replacing_legacy_view_fields(self):
+        view = {"scale": 1.28, "x": 0, "y": 0, "focus": None, "chosen": 0, "after": 0, "history": [],
+                "display": {"layout": "sectors", "theme": "paper", "routes": False, "labels": True}}
+        self.preferences("view", view=view)
+        with self.assertRaises(ValueError):
+            self.preferences("view", view={**view, "display": {**view["display"], "routes": "false"}})
+        server.init()
+        with server.connect() as db:
+            self.assertEqual(map_chat.conversations(db)["view"], view)
+
     def test_cloud_context_is_folder_scoped_and_citations_open_local_sources(self):
         self.preferences("folders", folders=["разрешено"])
         with patch.object(cloudru, "chat", return_value="По данным документа [1].") as cloud:

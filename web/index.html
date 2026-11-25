@@ -8,49 +8,119 @@
   <link rel="stylesheet" href="universe.css">
 </head>
 <body>
-<main class="universe">
-  <section class="map-panel" aria-label="Карта знаний">
-    <div class="map-toolbar">
-      <button id="map-overview" type="button" title="Вернуться к общему виду">Общий вид</button>
-    </div>
-    <p id="map-status" class="sr-only" role="status"></p>
-    <p id="map-notice" class="map-notice" aria-hidden="true" hidden></p>
-    <svg id="universe" tabindex="0" aria-describedby="map-keyboard-help" viewBox="-540 -540 1080 1080" aria-label="Радиальная карта знаний и документов">
-      <defs>
-        <radialGradient id="core-light">
-          <stop stop-color="#102329"/><stop offset=".8" stop-color="#0c1b22"/><stop offset="1" stop-color="#08151c"/>
-        </radialGradient>
-        <radialGradient id="orbit-nebula">
-          <stop stop-color="#22434e" stop-opacity=".12"/><stop offset=".63" stop-color="#1e3b48" stop-opacity=".10"/><stop offset="1" stop-color="#122c38" stop-opacity="0"/>
-        </radialGradient>
-      </defs>
+<header class="site-header">
+  <a class="workspace-brand" href="/" aria-label="Amatsukiyora, главная">
+    <svg width="33" height="33" viewBox="0 0 36 36" fill="none" aria-hidden="true">
+      <rect width="36" height="36" rx="11" fill="#26203a"/>
+      <circle cx="18" cy="18" r="9" stroke="#d0bdff" stroke-width="1.15"/>
+      <ellipse cx="18" cy="18" rx="5.5" ry="11.5" transform="rotate(41 18 18)" stroke="#d0bdff" stroke-width="1.15"/>
+      <circle cx="18" cy="18" r="2.2" fill="#f9c6a5"/>
     </svg>
-    <p id="map-keyboard-help" class="sr-only">Стрелки перемещают карту, плюс и минус меняют масштаб, Escape возвращает к общему виду.</p>
-  </section>
-  <aside class="map-chat" aria-labelledby="chat-title">
-    <div class="chat-heading">
-      <svg viewBox="0 0 32 32" aria-hidden="true">
-        <circle cx="16" cy="16" r="13"/><ellipse cx="16" cy="16" rx="7.5" ry="13" transform="rotate(42 16 16)"/><circle cx="16" cy="16" r="2.4"/>
-      </svg>
-      <h1 id="chat-title">Чат карты</h1>
-      <details id="chat-menu" hidden>
-        <summary aria-label="Меню чата">⋯</summary>
-        <div class="chat-menu-panel">
-          <button id="chat-new" type="button">Новый чат</button>
-          <div id="chat-sessions" aria-label="История бесед"></div>
+    <span>Amatsukiyora</span>
+  </a>
+  <nav class="site-nav" aria-label="Основная навигация">
+    <a href="/" aria-current="page">Обзор</a>
+    <a href="/documents.html">Документы</a>
+    <a href="/work.html">Работа</a>
+  </nav>
+  <span class="workspace-status" id="workspace-status" role="status"><i aria-hidden="true"></i><span>Загрузка</span></span>
+</header>
+<main class="workspace" id="workspace">
+  <header class="workspace-heading">
+    <h1>Карта знаний</h1>
+    <button class="control-button presentation-button" id="map-present" type="button" aria-pressed="false">
+      <span aria-hidden="true">⛶</span> <span id="map-present-label">Развернуть карту</span>
+    </button>
+  </header>
+  <div class="universe">
+    <aside class="map-directory workspace-card" aria-labelledby="directory-title">
+      <div class="directory-header">
+        <h2 id="directory-title">Разделы</h2>
+        <form id="map-search-form" class="map-search">
+          <label class="sr-only" for="map-search-input">Поиск по карте</label>
+          <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 4 4"/></svg>
+          <input id="map-search-input" type="search" placeholder="Поиск по карте" maxlength="200" autocomplete="off">
+          <kbd title="Перейти к поиску">/</kbd>
+        </form>
+      </div>
+      <nav id="map-sections" aria-label="Разделы карты"></nav>
+      <div id="map-search-results" class="map-search-results" aria-live="polite" hidden></div>
+      <div class="map-statistics">
+        <h3>В базе знаний</h3>
+        <dl>
+          <div><dt>Записи</dt><dd id="total-memory">—</dd></div>
+          <div><dt>Документы</dt><dd id="total-documents">—</dd></div>
+          <div><dt>Связи</dt><dd id="total-links">—</dd></div>
+        </dl>
+      </div>
+    </aside>
+    <section class="map-panel" aria-labelledby="map-view-label" data-map-theme="night">
+      <div class="canvas-header">
+        <div class="canvas-title"><i aria-hidden="true"></i><h2 id="map-view-label">Общий вид</h2></div>
+        <div class="map-layout" aria-label="Вид карты">
+          <button type="button" data-layout="orbit" aria-pressed="true">Орбиты</button>
+          <button type="button" data-layout="sectors" aria-pressed="false">Секторы</button>
         </div>
-      </details>
-      <button id="cloud-settings-open" class="chat-settings-button" type="button" aria-haspopup="dialog" aria-label="Настройки" title="Настройки" hidden>⚙</button>
-      <span id="chat-source">Локальные данные</span>
+      </div>
+      <div class="map-viewport">
+        <p id="map-status" class="sr-only" role="status"></p>
+        <p id="map-notice" class="map-notice" aria-hidden="true" hidden></p>
+        <div id="map-tooltip" class="map-tooltip" role="tooltip" hidden></div>
+        <svg id="universe" tabindex="0" aria-describedby="map-keyboard-help" viewBox="-540 -540 1080 1080" aria-label="Радиальная карта знаний и документов">
+          <defs>
+            <radialGradient id="core-light">
+              <stop class="core-stop-inner" stop-color="#332747"/><stop class="core-stop-outer" offset="1" stop-color="#211b33"/>
+            </radialGradient>
+            <radialGradient id="orbit-nebula">
+              <stop class="nebula-stop" stop-color="#aa7de5" stop-opacity=".15"/><stop offset="1" stop-opacity="0"/>
+            </radialGradient>
+          </defs>
+        </svg>
+      </div>
+      <div class="canvas-footer">
+        <div class="zoom-controls" aria-label="Масштаб карты">
+          <button id="map-zoom-out" type="button" aria-label="Уменьшить">−</button>
+          <output id="map-zoom-value" aria-label="Текущий масштаб">100%</output>
+          <button id="map-zoom-in" type="button" aria-label="Увеличить">+</button>
+        </div>
+        <button id="map-overview" type="button" title="Вернуться к общему виду">Общий вид</button>
+      </div>
+      <p id="map-keyboard-help" class="sr-only">Стрелки перемещают карту, плюс и минус меняют масштаб, Escape возвращает к общему виду.</p>
+    </section>
+    <div class="workspace-dock">
+      <aside class="map-chat workspace-card" aria-labelledby="chat-title">
+        <div class="chat-heading">
+          <div class="chat-heading-text">
+            <h2 id="chat-title">Чат карты</h2>
+            <span id="chat-source">Локальные данные</span>
+          </div>
+          <details id="chat-menu" hidden>
+            <summary aria-label="Меню чата">⋯</summary>
+            <div class="chat-menu-panel">
+              <button id="chat-new" type="button">Новый чат</button>
+              <div id="chat-sessions" aria-label="История бесед"></div>
+            </div>
+          </details>
+          <button id="cloud-settings-open" class="chat-settings-button" type="button" aria-haspopup="dialog" aria-label="Настройки" title="Настройки" hidden>⚙</button>
+        </div>
+        <div id="chat-history" class="chat-history" role="log" aria-label="Сообщения чата" tabindex="0"></div>
+        <form id="chat-form" class="chat-form">
+          <p id="chat-selection" hidden></p>
+          <label class="sr-only" for="chat-input">Вопрос или поисковая фраза</label>
+          <input id="chat-input" type="text" maxlength="2000" placeholder="Спросить или найти…" required>
+          <button type="submit">Отправить</button>
+        </form>
+      </aside>
+      <section class="workspace-card map-options" aria-labelledby="map-options-title">
+        <h2 id="map-options-title">Настройки карты</h2>
+        <label class="layer-option">Связи<input id="map-routes" type="checkbox" checked></label>
+        <label class="layer-option">Подписи записей<input id="map-labels" type="checkbox" checked></label>
+        <label class="layer-option">Цвет карты
+          <select id="map-theme"><option value="night">Тёмный</option><option value="paper">Светлый</option></select>
+        </label>
+      </section>
     </div>
-    <div id="chat-history" class="chat-history" role="log" aria-label="Сообщения чата" tabindex="0"></div>
-    <form id="chat-form" class="chat-form">
-      <p id="chat-selection" hidden></p>
-      <label class="sr-only" for="chat-input">Вопрос или поисковая фраза</label>
-      <input id="chat-input" type="text" maxlength="2000" placeholder="Спросить или найти…" required>
-      <button type="submit">Отправить</button>
-    </form>
-  </aside>
+  </div>
 </main>
 <dialog id="cloud-settings" aria-labelledby="cloud-settings-title">
   <form id="cloud-connection">

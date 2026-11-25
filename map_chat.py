@@ -66,6 +66,13 @@ def view_state(value):
     if not isinstance(history, list) or not all(type(i) is int and 0 <= i < 2**53 for i in history):
         raise ValueError("Invalid page history")
     state = {k: value.get(k) for k in ("scale", "x", "y", "focus")}
+    display = value.get("display")
+    if display is not None:
+        if (not isinstance(display, dict) or display.get("layout") not in ("orbit", "sectors")
+                or display.get("theme") not in ("night", "paper")
+                or any(type(display.get(k)) is not bool for k in ("routes", "labels"))):
+            raise ValueError("Invalid display preferences")
+        state["display"] = {key: display[key] for key in ("layout", "theme", "routes", "labels")}
     return dict(state, after=ids[0], chosen=ids[1], history=history[-100:])
 
 
