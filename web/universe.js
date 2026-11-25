@@ -21,6 +21,8 @@ const categories = [
 ];
 const get = (/** @type {string} */ id) => document.getElementById(id);
 const mapStatus = get('map-status');
+const mapNotice = get('map-notice');
+let overviewFailed = false;
 const selectionLabel = get('chat-selection');
 const format = new Intl.NumberFormat('ru-RU');
 const fmt = (/** @type {number} */ value) => format.format(value);
@@ -86,12 +88,21 @@ function label(parent, p, value, color, size) {
   return text;
 }
 
-/** @param {SVGElement} node @param {string} title @param {()=>void} action */
-function activate(node, title, action) {
+/** @param {SVGTextElement} text @param {number} minimum */
+function screenLabel(text, minimum) {
+  text.dataset.baseFont = text.getAttribute('font-size');
+  text.dataset.minFont = String(minimum);
+  return text;
+}
+
+/** @param {SVGElement} node @param {string} title @param {Point} anchor @param {()=>void} action */
+function activate(node, title, anchor, action) {
   node.classList.add('universe-node');
   node.setAttribute('tabindex', '0');
   node.setAttribute('role', 'button');
   node.setAttribute('aria-label', title);
+  node.dataset.anchorX = String(anchor.x);
+  node.dataset.anchorY = String(anchor.y);
   shape('title', {}, node).textContent = title;
   node.addEventListener('click', action);
   node.addEventListener('keydown', event => {
@@ -157,7 +168,7 @@ function drawCore(parent) {
   }
   shape('circle', { r: 75, fill: 'none', stroke: '#69c5bf', 'stroke-width': 1, opacity: .52, class: 'core-aura' }, parent);
   const nucleus = shape('circle', { r: 63, fill: 'url(#core-light)', stroke: '#63e5df', 'stroke-width': 1.7, color: '#63e5df' }, parent);
-  activate(nucleus, 'Общий вид', () => {
+  activate(nucleus, 'Общий вид', { x: 0, y: 0 }, () => {
     openOverview();
     svg.focus();
   });
@@ -169,9 +180,9 @@ function drawCore(parent) {
     shape('circle', { cx: p.x, cy: p.y, r: 2.2, fill: '#f2ffff' }, rotor);
   }
   const count = focus ? page?.items.length || 0 : (overview?.memory || 0) + (overview?.documents || 0);
-  label(parent, { x: 0, y: -19 }, focus?.name || 'Ядро', '#b7e7ec', 16);
-  label(parent, { x: 0, y: 13 }, fmt(count), '#f4feff', 32);
-  label(parent, { x: 0, y: 35 }, focus ? 'Общий вид' : 'записей и файлов', '#adc4d9', 12);
+  label(parent, { x: 0, y: -19 }, focus?.name || 'Ядро', '#b7e7ec', 16).classList.add('core-caption');
+  screenLabel(label(parent, { x: 0, y: 13 }, fmt(count), '#f4feff', 32), 15).classList.add('core-count');
+  label(parent, { x: 0, y: 35 }, focus ? 'Общий вид' : 'записей и файлов', '#adc4d9', 12).classList.add('core-caption');
 }
 
 /** @param {Group} group @param {number} i @param {SVGElement} nodes @param {number} maximum */
@@ -192,7 +203,7 @@ function drawGroup(group, i, nodes, maximum) {
     const outerRadius = 456 - Math.floor(slot / 8) * 24;
     const outer = point(outerAngle, outerRadius);
     const ring = shape('circle', { cx: outer.x, cy: outer.y, r: 9.2, fill: '#0e1c24', stroke: color, 'stroke-width': 1.2, color, class: hit ? 'orbit-token chat-map-hit' : 'orbit-token' }, clusters);
-    activate(ring, 'Орбита: ' + range, () => open(name, bin.start, bin.end, outer));
+    activate(ring, 'Орбита: ' + range, outer, () => open(name, bin.start, bin.end, outer));
     shape('circle', { cx: outer.x, cy: outer.y, r: 5.6, fill: 'none', stroke: color, 'stroke-width': .8, opacity: .64, 'pointer-events': 'none' }, clusters);
     shape('circle', { cx: outer.x, cy: outer.y, r: 1.65, fill: color, opacity: .92, 'pointer-events': 'none' }, clusters);
     if (slot < 8 && bin.count > maximum * .24) {
@@ -205,7 +216,7 @@ function drawGroup(group, i, nodes, maximum) {
     const radius = 168 + Math.floor(slot / 4) * 35;
     const p = point(degrees, radius);
     const cluster = shape('g', { color, class: 'micro-cluster' }, clusters);
-    activate(cluster, 'Кластер: ' + range, () => open(name, bin.start, bin.end, p));
+    activate(cluster, 'Кластер: ' + range, p, () => open(name, bin.start, bin.end, p));
     cluster.dataset.cluster = clusterKey(name, bin);
     cluster.dataset.x = String(p.x);
     cluster.dataset.y = String(p.y);
@@ -221,19 +232,19 @@ function drawGroup(group, i, nodes, maximum) {
       const signal = (slot * 7 + dot * 3 + i) % 13 === 0;
       shape('circle', { cx: q.x, cy: q.y, r: signal ? 2.05 : 1.55, fill: color, opacity: signal ? .95 : .64, class: signal ? 'cluster-signal' : '', 'pointer-events': 'none' }, cluster);
     }
-    label(cluster, { x: p.x, y: p.y + 24 }, fmt(bin.count), color, 9).classList.add('cluster-count');
+    screenLabel(label(cluster, { x: p.x, y: p.y + 24 }, fmt(bin.count), color, 9), 9).classList.add('cluster-count');
     if (slot % 3 === 0) {
       const d = 'M ' + xy(p) + ' Q ' + xy(point(degrees, 313)) + ' ' + xy(outer);
       shape('path', { d, fill: 'none', stroke: color, 'stroke-width': .65, opacity: .17, 'pointer-events': 'none' }, clusters);
     }
   }
   const category = shape('g', { color, class: 'category-target' }, nodes);
-  activate(category, name + ' · ' + fmt(group.count), () => open(name));
+  activate(category, name + ' · ' + fmt(group.count), hub, () => open(name));
   shape('circle', { cx: hub.x, cy: hub.y, r: 19, fill: 'transparent', stroke: 'none' }, category);
   shape('circle', { cx: hub.x, cy: hub.y, r: 9, fill: '#0d1a22', stroke: color, 'stroke-width': 1.6,
     class: matches.some(match => match.group === name) ? 'chat-map-hit' : '' }, category);
   shape('circle', { cx: hub.x, cy: hub.y, r: 3.3, fill: color, 'pointer-events': 'none' }, category);
-  const captionText = label(category, caption, name + '  ' + fmt(group.count), color, 15);
+  const captionText = screenLabel(label(category, caption, name + '  ' + fmt(group.count), color, 15), 12);
   captionText.classList.add('category-caption');
 }
 
@@ -269,6 +280,7 @@ function entryLabel(parent, p, item, priority, offset = false) {
   const text = label(parent, { x: p.x + (offset ? 11 : 0), y: p.y - (offset ? 1 : 14) },
     name, categoryColor(item.group), 13);
   if (offset) text.setAttribute('text-anchor', 'start');
+  screenLabel(text, priority === 3 ? 13 : 11);
   text.classList.add('entry-label');
   text.dataset.priority = String(priority);
   text.dataset.anchorX = String(p.x);
@@ -318,8 +330,8 @@ function drawDetails(origin) {
     const p = point(angle(i) + 4, 455);
     const station = shape('circle', { cx: p.x, cy: p.y, r: 8, stroke: category.color, fill: '#0b1627', 'stroke-width': 2, color: category.color,
       class: matches.some(match => match.group === category.name) ? 'chat-map-hit' : '' }, nodes);
-    activate(station, category.name, () => open(category.name));
-    label(nodes, { x: p.x, y: p.y + 25 }, category.name, category.color, 15);
+    activate(station, category.name, p, () => open(category.name));
+    screenLabel(label(nodes, { x: p.x * .87, y: p.y * .87 + 25 }, category.name, category.color, 15), 11);
   });
   if (selectedPoint) {
     const remote = neighbors.filter(node => node.group !== group || !positions.has(node.id));
@@ -330,7 +342,7 @@ function drawDetails(origin) {
       drawRoute(lane, `M ${xy(selectedPoint)} Q ${xy({ x: p.x * .65, y: p.y * .65 })} ${xy(p)}`, accent, 8, true);
       const node = entryShape(p, neighbor.group, nodes, 8, { fill: '#132532', stroke: accent, 'stroke-width': 2.5,
         color: accent, class: 'connected-node', 'data-neighbor': neighbor.group + ':' + neighbor.id });
-      activate(node, neighbor.label, () => { void inspectMatch(neighbor); });
+      activate(node, neighbor.label, p, () => { void inspectMatch(neighbor); });
       entryLabel(nodes, p, neighbor, 2);
     });
   }
@@ -348,7 +360,7 @@ function drawDetails(origin) {
     });
     if (hit) node.classList.add('chat-map-hit');
     if (highlighted && !isChosen && selected.has(item.id)) node.classList.add('connected-node');
-    activate(node, item.label, () => choose(item, node === document.activeElement));
+    activate(node, item.label, p, () => choose(item, node === document.activeElement));
     if (isChosen) {
       node.classList.add('universe-selected');
       shape('circle', { cx: p.x, cy: p.y, r: 16, fill: 'none', stroke: color, 'stroke-width': 1.5, opacity: .8, class: 'selection-ring', 'pointer-events': 'none' }, layer);
@@ -364,6 +376,7 @@ function renderMap(animate = false, origin = null) {
     selectionLabel.hidden = !selected;
     selectionLabel.textContent = selected ? 'Узел: ' + selected.label : '';
   }
+  updateMapNotice();
   svg.dataset.selected = String(!!chosen);
   svg.dataset.view = focus ? 'detail' : 'overview';
   content.replaceChildren();
@@ -426,18 +439,33 @@ async function fetchData(url, options) {
   return response.json();
 }
 
+function updateMapNotice() {
+  if (!mapNotice) return;
+  const text = overviewFailed && !overview ? 'Карта не загрузилась. Нажмите «Общий вид», чтобы повторить.'
+    : focus ? (page?.items.length ? '' : 'В этой категории пока нет записей.')
+    : overview && !overview.memory && !overview.documents
+      ? 'Карта пока пуста. Добавьте файлы в папку Aspksa/Документы и перезапустите приложение.' : '';
+  mapNotice.hidden = !text;
+  mapNotice.textContent = text;
+  if (text && mapStatus.textContent !== text) mapStatus.textContent = text;
+}
+
 async function loadOverview() {
   const token = ++request;
   try {
     const result = demo?.overview || await fetchData('/api/universe');
     if (token !== request) return;
     overview = result;
+    overviewFailed = false;
     mapStatus.textContent = result.memory || result.documents
       ? 'Карта загружена.'
       : 'Карта пока пуста. Добавьте файлы в Aspksa/Документы.';
     renderMap(true);
   } catch {
-    if (token === request) mapStatus.textContent = 'Не удалось загрузить карту';
+    if (token === request) {
+      overviewFailed = true;
+      updateMapNotice();
+    }
   }
 }
 
@@ -494,6 +522,7 @@ function open(name, start = defaults.start, end = defaults.end, origin = null) {
 }
 
 function openOverview() {
+  const fromMap = svg.contains(document.activeElement);
   request++;
   pending = false;
   focus = null;
@@ -504,8 +533,11 @@ function openOverview() {
   mapStatus.textContent = 'Общий вид карты.';
   setView(1, 0, 0);
   renderMap(true);
+  if (fromMap) svg.focus({ preventScroll: true });
   if (!overview) void loadOverview();
 }
+
+get('map-overview')?.addEventListener('click', openOverview);
 
 let labelFrame = 0;
 /** @param {number} value @param {number} tx @param {number} ty */
@@ -538,8 +570,8 @@ function drawPaging(parent) {
   for (const { x, title, available, action } of controls) {
     if (!available) continue;
     const control = shape('rect', { x, y: 389, width: 70, height: 27, rx: 13, fill: '#112638', stroke: '#649ea8', color: '#63e5df' }, group);
-    activate(control, title, () => { if (!pending) void action(); });
-    label(group, { x: x + 35, y: 407 }, title, '#d6ecf4', 13);
+    activate(control, title, { x: x + 35, y: 402.5 }, () => { if (!pending) void action(); });
+    screenLabel(label(group, { x: x + 35, y: 407 }, title, '#d6ecf4', 13), 11);
   }
 }
 
@@ -548,6 +580,10 @@ svg.addEventListener('keydown', event => {
   else if (event.key === '0') setView(1, 0, 0);
   else if (event.key === '+' || event.key === '=') zoom(1.28, { x: 0, y: 0 });
   else if (event.key === '-') zoom(1 / 1.28, { x: 0, y: 0 });
+  else if (event.key === 'ArrowLeft') setView(scale, x + 64, y);
+  else if (event.key === 'ArrowRight') setView(scale, x - 64, y);
+  else if (event.key === 'ArrowUp') setView(scale, x, y + 64);
+  else if (event.key === 'ArrowDown') setView(scale, x, y - 64);
   else return;
   event.preventDefault();
 });
@@ -608,8 +644,39 @@ svg.addEventListener('pointercancel', event => pointers.delete(event.pointerId))
 svg.addEventListener('lostpointercapture', event => {
   if (event.target === svg) pointers.delete(event.pointerId);
 });
+/** @param {SVGElement} node @param {DOMMatrix} matrix */
+function screenAnchor(node, matrix) {
+  return new DOMPoint(Number(node.dataset.anchorX), Number(node.dataset.anchorY)).matrixTransform(matrix);
+}
+
+/** @param {DOMPoint} point @param {DOMRect} bounds @param {number} [margin] */
+function withinMap(point, bounds, margin = 0) {
+  return point.x >= bounds.left - margin && point.x <= bounds.right + margin &&
+    point.y >= bounds.top - margin && point.y <= bounds.bottom + margin;
+}
+
 svg.addEventListener('click', event => {
-  if (moved && event.detail > 0) event.stopPropagation();
+  if (event.detail === 0) return;
+  if (moved) {
+    event.stopPropagation();
+    return;
+  }
+  if (/** @type {Element} */ (event.target).closest('.universe-node')) return;
+  const matrix = scene.getScreenCTM();
+  if (!matrix) return;
+  // Use screen-space distance so adjacent small markers keep distinct targets.
+  let nearest = /** @type {SVGElement|null} */ (null);
+  let distance = 16;
+  for (const node of content.querySelectorAll('[tabindex="0"].universe-node')) {
+    const marker = /** @type {SVGGraphicsElement} */ (node);
+    const point = screenAnchor(marker, marker.getScreenCTM() || matrix);
+    const offset = Math.hypot(point.x - event.clientX, point.y - event.clientY);
+    if (offset < distance) {
+      nearest = marker;
+      distance = offset;
+    }
+  }
+  nearest?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 }, { capture: true });
 
 const demoFullPages = demo ? Object.entries(demo.pages).filter(([key]) => {
@@ -689,7 +756,7 @@ function drawPreviews() {
       const hit = matches.some(row => row.group === group && row.id === item.id);
       const node = entryShape(p, group, previewLayer, 4.5, { fill: '#132532', stroke: color, color,
         'stroke-width': 1.5, class: hit ? 'chat-map-hit' : '', 'data-preview-entry': item.id });
-      activate(node, item.label, () => { void inspectMatch(match); });
+      activate(node, item.label, p, () => { void inspectMatch(match); });
       entryLabel(previewLayer, p, match, hit ? 2 : 1, true);
     }
   }
@@ -725,22 +792,22 @@ function schedulePreviews() {
 function updateLabels() {
   svg.dataset.level = scale >= 2.55 ? 'entries' : scale >= 1.2 ? 'clusters' : 'overview';
   const matrix = scene.getScreenCTM();
-  if (!matrix) return;
+  if (!matrix || !matrix.a) return;
   const bounds = svg.getBoundingClientRect();
+  svg.dataset.compact = String(bounds.width < 450 && scale < 1.2);
+  const pixelsPerUnit = Math.abs(matrix.a);
+  for (const element of content.querySelectorAll('[data-min-font]')) {
+    const text = /** @type {SVGTextElement} */ (element);
+    const min = Number(text.dataset.minFont), base = Number(text.dataset.baseFont);
+    const size = String(Math.min(28, Math.max(min, base * pixelsPerUnit)) / pixelsPerUnit);
+    if (text.getAttribute('font-size') !== size) text.setAttribute('font-size', size);
+  }
   const labels = Array.from(content.querySelectorAll('.entry-label'), node => /** @type {SVGTextElement} */ (node))
     .sort((a, b) => Number(b.dataset.priority) - Number(a.dataset.priority));
-  const fontSize = String(Math.min(32, Math.max(13, 11 / Math.abs(matrix.a))));
-  for (const text of labels) {
-    if (text.getAttribute('font-size') !== fontSize) text.setAttribute('font-size', fontSize);
-  }
   /** @type {DOMRect[]} */ const occupied = [];
   for (const text of labels) {
     const priority = Number(text.dataset.priority);
-    const anchor = new DOMPoint(Number(text.dataset.anchorX), Number(text.dataset.anchorY)).matrixTransform(matrix);
-    const readable = priority >= 2 || matrix.a * 13 >= 10;
-    const nearby = anchor.x >= bounds.left - 6 && anchor.x <= bounds.right + 6 &&
-      anchor.y >= bounds.top - 6 && anchor.y <= bounds.bottom + 6;
-    if (!readable || !nearby) {
+    if (!withinMap(screenAnchor(text, matrix), bounds, 6)) {
       text.dataset.visible = 'false';
       continue;
     }
@@ -750,9 +817,22 @@ function updateLabels() {
     text.dataset.visible = String(!overlaps || priority === 3);
     if (!overlaps || priority === 3) occupied.push(box);
   }
+  for (const element of content.querySelectorAll('.universe-node')) {
+    const node = /** @type {SVGElement} */ (element);
+    const overviewCluster = !!node.closest('.overview-clusters');
+    const preview = !!node.closest('.overview-previews');
+    const levelVisible = (!overviewCluster || scale >= 1.2) && (!preview || scale >= 2.55);
+    const visible = levelVisible && withinMap(screenAnchor(node, matrix), bounds, -4);
+    const tabIndex = visible ? '0' : '-1';
+    if (node.getAttribute('tabindex') !== tabIndex) node.setAttribute('tabindex', tabIndex);
+    if (!visible && document.activeElement === node) svg.focus({ preventScroll: true });
+  }
 }
 
-new ResizeObserver(updateLabels).observe(svg);
+new ResizeObserver(() => {
+  updateLabels();
+  schedulePreviews();
+}).observe(svg);
 
 function currentView() {
   return { scale, x, y, focus, after, chosen, history };

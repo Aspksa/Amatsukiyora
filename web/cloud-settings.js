@@ -49,6 +49,7 @@ export function startCloudSettings() {
     }
     model.value = saved.model;
     source.textContent = saved.model ? 'Авто · ' + saved.model : 'Локальные данные';
+    source.title = source.textContent;
   }
 
   /** @param {() => Promise<void>} run */
