@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Работа · Amatsukiyora</title>
+  <link rel="stylesheet" href="portal.css">
+</head>
+<body class="portal work-page">
+  <aside class="sidebar">
+    <a class="brand" href="/"><i aria-hidden="true"></i><span>Amatsukiyora</span></a>
+    <nav aria-label="Разделы">
+      <a href="/" class="nav-link">К карте</a>
+      <a href="documents.html" class="nav-link">Документы</a>
+      <a href="work.html" class="nav-link" aria-current="page">Работа</a>
+    </nav>
+    <nav aria-label="Журналы работы" class="work-nav">
+      <a href="#employees" class="nav-link" data-section="employees">Сотрудники</a>
+      <a href="#vehicles" class="nav-link" data-section="vehicles">Автомобили</a>
+      <a href="#timesheet" class="nav-link" data-section="timesheet">Табель</a>
+      <a href="#fuel" class="nav-link" data-section="fuel">ГСМ</a>
+    </nav>
+  </aside>
+  <main class="portal-main">
+    <header class="page-heading">
+      <div><p class="section-name">Работа</p><h1 id="work-title">Сотрудники</h1><p id="work-description"></p></div>
+      <div class="actions">
+        <button id="import-fuel" class="button" type="button" hidden>Загрузить выписку .xls</button>
+        <input id="fuel-file" type="file" accept=".xls" hidden>
+        <button id="add-record" class="button primary" type="button" disabled>Добавить сотрудника</button>
+      </div>
+    </header>
+    <div class="month-row" id="month-row" hidden>
+      <label>Месяц <input id="work-month" type="month" required></label>
+    </div>
+    <div id="work-metrics" class="metrics" aria-label="Сводка раздела"></div>
+    <p class="status" id="work-status" role="status"></p>
+    <section id="work-results" aria-label="Записи"></section>
+  </main>
+  <dialog id="work-editor" aria-labelledby="editor-title">
+    <form id="work-form" class="dialog-body">
+      <header class="dialog-heading"><h2 id="editor-title"></h2><button type="button" class="close-dialog" aria-label="Закрыть">×</button></header>
+      <div id="work-fields" class="form-fields"></div>
+      <p class="status error" id="editor-error" role="status"></p>
+      <button id="save-record" class="button primary" type="submit">Сохранить</button>
+    </form>
+  </dialog>
+  <script type="module" src="work.js"></script>
+</body>
+</html>

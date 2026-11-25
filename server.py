@@ -5,8 +5,14 @@ from contextlib import contextmanager
 import json
 import webbrowser
 import argparse
-from urllib.parse import urlsplit, parse_qs
+import shutil
+import os
+from datetime import date
+from urllib.parse import urlsplit, parse_qs, quote
 import cloudru
+import document_disk
+import fuel_statement
+import workplace
 import map_chat
 import universe
 
@@ -18,6 +24,11 @@ CLOUD_SETTINGS = "/api/cloudru/settings"
 CLOUD_CHAT = "/api/cloudru/chat"
 MAP_CHAT = "/api/map-chat"
 CHAT_FOLDERS = "/api/map-chat/folders"
+DISK = "/api/disk"
+FILE = "/api/disk/file"
+UPLOAD = "/api/disk/upload"
+WORK = "/api/work"
+FUEL_IMPORT = "/api/work/fuel-import"
 
 @contextmanager
 def connect():
@@ -44,6 +55,7 @@ def init():
             api_key TEXT NOT NULL,
             model TEXT NOT NULL DEFAULT '')""")
         map_chat.init(db)
+        workplace.init(db)
 
 def add_link(source, target):
     if type(source) is not int or type(target) is not int or source == target:
@@ -134,8 +146,106 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
+    def local_request(self):
+        return self.headers.get("Host") == f"127.0.0.1:{self.server.server_port}"
+
+    def get_workspace(self, url):
+        if not self.local_request():
+            return self.reply(403, {"error": "Доступ разрешён только локально."})
+        params = parse_qs(url.query)
+        try:
+            if url.path == WORK:
+                with connect() as db:
+                    db.execute("BEGIN")
+                    return self.reply(200, workplace.read(db, params.get("month", [date.today().strftime("%Y-%m")])[0]))
+            if url.path == DISK:
+                return self.reply(200, document_disk.browse(
+                    DOCUMENTS, params.get("folder", [""])[0], params.get("q", [""])[0]
+                ))
+            _, path = document_disk.path_under(DOCUMENTS, params.get("path", [""])[0])
+            if not path.is_file():
+                raise FileNotFoundError()
+            with path.open("rb") as stream:
+                if params.get("preview") == ["1"]:
+                    data = (stream.read(32769) if path.suffix.lower() in universe.TEXT_EXTENSIONS else b"")
+                    return self.reply(200, {"text": data[:32768].decode("utf-8-sig", errors="replace"),
+                                            "truncated": len(data) > 32768})
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + quote(path.name, safe=""))
+                self.send_header("Content-Length", str(os.fstat(stream.fileno()).st_size))
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                shutil.copyfileobj(stream, self.wfile)
+        except (BrokenPipeError, ConnectionResetError):
+            return
+        except ValueError as error:
+            return self.reply(400, {"error": str(error)})
+        except FileNotFoundError:
+            return self.reply(404, {"error": "Файл или папка не найдены."})
+        except OSError:
+            return self.reply(400, {"error": "Не удалось прочитать файл или папку."})
+
+    def post_workspace(self, url):
+        if not self.local_request():
+            return self.reply(403, {"error": "Доступ разрешён только локально."})
+        try:
+            length = int(self.headers.get("Content-Length", "-1"))
+            if url.path == FUEL_IMPORT:
+                if not 0 < length <= fuel_statement.MAX_SIZE:
+                    raise ValueError("Размер выписки должен быть от 1 байта до 8 МиБ.")
+                filename = document_disk.name(parse_qs(url.query).get("name", [""])[0])
+                if not filename.casefold().endswith(".xls"):
+                    raise ValueError("Выберите выписку Excel .xls.")
+                body = self.rfile.read(length)
+                if len(body) != length:
+                    raise ValueError("Загрузка выписки прервалась.")
+                records = fuel_statement.parse(body)
+                with connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = workplace.import_statement(db, records, filename)
+                return self.reply(200, result)
+            if url.path == UPLOAD:
+                params = parse_qs(url.query)
+                document_disk.upload(DOCUMENTS, params.get("folder", [""])[0], params.get("name", [""])[0],
+                                     self.rfile, length)
+            else:
+                if not 0 < length <= 65536 or self.headers.get_content_type() != "application/json":
+                    raise ValueError("Некорректный запрос.")
+                data = json.loads(self.rfile.read(length))
+                if not isinstance(data, dict):
+                    raise ValueError("Некорректные данные.")
+                if url.path == WORK:
+                    with connect() as db:
+                        db.execute("BEGIN IMMEDIATE")
+                        record = workplace.save(db, data)
+                    return self.reply(200, {"id": record})
+                if data.get("action") == "mkdir":
+                    document_disk.folder_create(DOCUMENTS, data.get("folder", ""), data.get("name"))
+                    return self.reply(201, {"ok": True})
+                if data.get("action") != "refresh":
+                    raise ValueError("Неизвестная команда.")
+            with connect() as db:
+                result = universe.scan(db, DOCUMENTS)
+            return self.reply(200, result)
+        except FileExistsError:
+            return self.reply(409, {"error": "Файл или папка с таким именем уже существует."})
+        except FileNotFoundError:
+            return self.reply(404, {"error": "Папка не найдена."})
+        except sqlite3.IntegrityError:
+            return self.reply(409, {"error": "Проверьте госномер, назначение и записи за выбранную дату. Возможен дубль."})
+        except json.JSONDecodeError:
+            return self.reply(400, {"error": "Некорректные данные."})
+        except (ValueError, UnicodeError) as error:
+            return self.reply(400, {"error": str(error)})
+        except OSError:
+            return self.reply(400, {"error": "Не удалось сохранить файл или папку."})
+
     def do_GET(self):
         url = urlsplit(self.path)
+        if url.path in (DISK, FILE, WORK):
+            return self.get_workspace(url)
         if url.path in (MAP_CHAT, CHAT_FOLDERS):
             if self.headers.get("Host") != f"127.0.0.1:{self.server.server_port}":
                 return self.reply(403, {"error": "host"})
@@ -178,6 +288,11 @@ class Handler(SimpleHTTPRequestHandler):
             rows = db.execute("SELECT id,category,label FROM memory ORDER BY id DESC LIMIT 4800").fetchall()
         self.reply(200, [dict(row) for row in rows])
     def do_POST(self):
+        url = urlsplit(self.path)
+        if url.path in (DISK, UPLOAD, WORK, FUEL_IMPORT):
+            if self.headers.get("Origin") != f"http://127.0.0.1:{self.server.server_port}":
+                return self.reply(403, {"error": "Доступ разрешён только локально."})
+            return self.post_workspace(url)
         if self.path not in ("/api/memory", "/api/links", "/api/universe/scan", "/api/universe/document-link", CLOUD_SETTINGS, CLOUD_CHAT, MAP_CHAT, CHAT_FOLDERS):
             return self.reply(404, {"error":"not found"})
         if self.headers.get("Origin") != f"http://127.0.0.1:{self.server.server_port}":

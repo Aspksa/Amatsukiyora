@@ -18,6 +18,7 @@ const categories = [
   { name: 'Опыт', color: '#dcac75' },
   { name: 'Личность', color: '#ad9ad2' },
   { name: 'Документы', color: '#8bc8ad' },
+  { name: 'Работа', color: '#eaa4a9' },
 ];
 const get = (/** @type {string} */ id) => document.getElementById(id);
 const mapStatus = get('map-status');
@@ -239,12 +240,12 @@ function drawGroup(group, i, nodes, maximum) {
     }
   }
   const category = shape('g', { color, class: 'category-target' }, nodes);
-  activate(category, name + ' · ' + fmt(group.count), hub, () => open(name));
+  activate(category, name === 'Работа' ? name : name + ' · ' + fmt(group.count), hub, () => open(name));
   shape('circle', { cx: hub.x, cy: hub.y, r: 19, fill: 'transparent', stroke: 'none' }, category);
   shape('circle', { cx: hub.x, cy: hub.y, r: 9, fill: '#0d1a22', stroke: color, 'stroke-width': 1.6,
     class: matches.some(match => match.group === name) ? 'chat-map-hit' : '' }, category);
   shape('circle', { cx: hub.x, cy: hub.y, r: 3.3, fill: color, 'pointer-events': 'none' }, category);
-  const captionText = screenLabel(label(category, caption, name + '  ' + fmt(group.count), color, 15), 12);
+  const captionText = screenLabel(label(category, caption, name === 'Работа' ? name : name + '  ' + fmt(group.count), color, 15), 12);
   captionText.classList.add('category-caption');
 }
 
@@ -257,7 +258,7 @@ function drawOverview() {
     if (from < 0 || to < 0) return;
     const a = angle(from), b = angle(to);
     const hub = point(a, 137);
-    const distance = Math.min(Math.abs(from - to), 5 - Math.abs(from - to));
+    const distance = Math.min(Math.abs(from - to), categories.length - Math.abs(from - to));
     const radius = distance === 1 ? 246 + i % 5 * 24 : 98 + i % 5 * 10;
     const d = from === to
       ? 'M ' + xy(hub) + ' Q ' + xy(point(a - 18, 180)) + ' ' + xy(point(a, 187)) +
@@ -272,6 +273,7 @@ function drawOverview() {
     if (i < 0) continue;
     drawGroup(group, i, nodes, maximum);
   }
+  drawGroup({ name: 'Работа', count: 0, bins: [] }, indexOf('Работа'), nodes, maximum);
 }
 
 /** @param {SVGElement} parent @param {Point} p @param {Match} item @param {number} priority @param {boolean} [offset] */
@@ -515,6 +517,10 @@ async function loadPage(target, cursor, stack, match, origin = null) {
 
 /** @param {string} name @param {number} [start] @param {number} [end] @param {Point|null} [origin] */
 function open(name, start = defaults.start, end = defaults.end, origin = null) {
+  if (name === 'Документы' || name === 'Работа') {
+    window.location.assign(name === 'Документы' ? '/documents.html' : '/work.html');
+    return;
+  }
   const anchor = origin && { x: scale * origin.x + x, y: scale * origin.y + y };
   const arrival = anchor && { x: Math.max(-510, Math.min(510, anchor.x)), y: Math.max(-510, Math.min(510, anchor.y)) };
   if (!arrival) setView(1, 0, 0);

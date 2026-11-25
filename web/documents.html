@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Документы · Amatsukiyora</title>
+  <link rel="stylesheet" href="portal.css">
+</head>
+<body class="portal documents-page">
+  <aside class="sidebar">
+    <a class="brand" href="/"><i aria-hidden="true"></i><span>Amatsukiyora</span></a>
+    <nav aria-label="Разделы">
+      <a href="/" class="nav-link">К карте</a>
+      <a href="documents.html" class="nav-link" aria-current="page">Документы</a>
+      <a href="work.html" class="nav-link">Работа</a>
+    </nav>
+    <p class="local-note">Локальная папка<br><strong>Aspksa/Документы</strong></p>
+  </aside>
+  <main class="portal-main">
+    <header class="page-heading">
+      <div><h1>Документы</h1><p>Папки и файлы на этом компьютере</p></div>
+      <div class="actions">
+        <button id="new-folder" class="button" type="button">Новая папка</button>
+        <button id="upload" class="button primary" type="button">Загрузить файлы</button>
+        <input id="file-input" type="file" multiple hidden>
+      </div>
+    </header>
+    <div class="document-toolbar">
+      <label class="search-field"><span class="visually-hidden">Поиск по имени</span><input id="file-search" placeholder="Поиск по имени" type="search" maxlength="200"></label>
+      <label class="sort-field"><span class="visually-hidden">Сортировка</span><select id="sort">
+        <option value="name">По имени</option><option value="date">Сначала новые</option><option value="size">По размеру</option>
+      </select></label>
+      <div class="segmented" aria-label="Вид файлов">
+        <button id="view-grid" type="button" aria-pressed="false">Плитки</button>
+        <button id="view-list" type="button" aria-pressed="true">Список</button>
+      </div>
+      <button class="button" id="refresh-files" type="button">Обновить</button>
+    </div>
+    <div class="content-heading">
+      <nav id="breadcrumbs" aria-label="Путь к папке"></nav>
+      <span id="file-count"></span>
+    </div>
+    <p id="file-status" class="status" role="status"></p>
+    <section aria-label="Файлы и папки" id="file-results"></section>
+  </main>
+  <dialog id="folder-dialog" aria-labelledby="folder-title">
+    <form id="folder-form" class="dialog-body">
+      <header class="dialog-heading"><h2 id="folder-title">Новая папка</h2><button type="button" class="close-dialog" aria-label="Закрыть">×</button></header>
+      <label>Имя папки<input name="name" maxlength="240" required autofocus></label>
+      <p class="status error" id="folder-error" role="status"></p>
+      <button class="button primary" type="submit">Создать</button>
+    </form>
+  </dialog>
+  <dialog id="file-dialog" aria-labelledby="file-title">
+    <div class="dialog-body">
+      <header class="dialog-heading"><h2 id="file-title"></h2><button type="button" class="close-dialog" aria-label="Закрыть">×</button></header>
+      <p class="file-meta" id="file-meta"></p>
+      <pre id="file-preview" hidden tabindex="0"></pre>
+      <p id="file-preview-status" class="status" role="status"></p>
+      <a class="button primary" id="download">Скачать файл</a>
+    </div>
+  </dialog>
+  <script type="module" src="documents.js"></script>
+</body>
+</html>
