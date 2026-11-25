@@ -15,6 +15,7 @@
       <a href="work.html" class="nav-link" aria-current="page">Работа</a>
     </nav>
     <nav aria-label="Журналы работы" class="work-nav">
+      <a href="#overview" class="nav-link" data-section="overview">Обзор</a>
       <a href="#employees" class="nav-link" data-section="employees">Сотрудники</a>
       <a href="#vehicles" class="nav-link" data-section="vehicles">Автомобили</a>
       <a href="#timesheet" class="nav-link" data-section="timesheet">Табель</a>
@@ -23,10 +24,12 @@
   </aside>
   <main class="portal-main">
     <header class="page-heading">
-      <div><p class="section-name">Работа</p><h1 id="work-title">Сотрудники</h1><p id="work-description"></p></div>
+      <div><p class="section-name">Работа</p><h1 id="work-title">Обзор работы</h1><p id="work-description"></p></div>
       <div class="actions">
         <button id="import-fuel" class="button" type="button" hidden>Загрузить выписку .xls</button>
         <input id="fuel-file" type="file" accept=".xls" hidden>
+        <button id="schedule" class="button" type="button" hidden>Заполнить неделю</button>
+        <a id="export-fuel" class="button" hidden>Скачать Excel</a>
         <button id="add-record" class="button primary" type="button" disabled>Добавить сотрудника</button>
       </div>
     </header>
@@ -35,7 +38,14 @@
     </div>
     <div id="work-metrics" class="metrics" aria-label="Сводка раздела"></div>
     <p class="status" id="work-status" role="status"></p>
-    <section id="work-results" aria-label="Записи"></section>
+    <div class="detail-layout">
+      <section id="work-results" aria-label="Записи"></section>
+      <aside id="work-detail" class="detail-panel" aria-labelledby="work-detail-title" hidden>
+        <header class="dialog-heading"><h2 id="work-detail-title"></h2><button type="button" id="close-work-detail" class="close-dialog" aria-label="Закрыть карточку">×</button></header>
+        <div id="work-detail-body"></div>
+        <button id="edit-detail" class="button" type="button">Изменить</button>
+      </aside>
+    </div>
   </main>
   <dialog id="work-editor" aria-labelledby="editor-title">
     <form id="work-form" class="dialog-body">

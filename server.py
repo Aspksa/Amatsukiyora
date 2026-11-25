@@ -13,6 +13,7 @@ import cloudru
 import document_disk
 import fuel_statement
 import workplace
+import work_reports
 import map_chat
 import universe
 
@@ -29,6 +30,7 @@ FILE = "/api/disk/file"
 UPLOAD = "/api/disk/upload"
 WORK = "/api/work"
 FUEL_IMPORT = "/api/work/fuel-import"
+WORK_EXPORT = "/api/work/export"
 
 @contextmanager
 def connect():
@@ -154,10 +156,25 @@ class Handler(SimpleHTTPRequestHandler):
             return self.reply(403, {"error": "Доступ разрешён только локально."})
         params = parse_qs(url.query)
         try:
-            if url.path == WORK:
+            if url.path in (WORK, WORK_EXPORT):
+                period = params.get("month", [date.today().strftime("%Y-%m")])[0]
                 with connect() as db:
                     db.execute("BEGIN")
-                    return self.reply(200, workplace.read(db, params.get("month", [date.today().strftime("%Y-%m")])[0]))
+                    if url.path == WORK and "vehicle" in params:
+                        return self.reply(200, workplace.recent_fuel(db, int(params["vehicle"][0])))
+                    run = int(params["run"][0]) if url.path == WORK and "run" in params else None
+                    data = workplace.read(db, period, run)
+                if url.path == WORK:
+                    return self.reply(200, data)
+                report = work_reports.excel([entry["row"] for entry in data["fleet"]])
+                self.send_response(200)
+                self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                self.send_header("Content-Disposition", "attachment; filename=GSM-" + period + ".xlsx")
+                self.send_header("Content-Length", str(len(report)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(report)
+                return
             if url.path == DISK:
                 return self.reply(200, document_disk.browse(
                     DOCUMENTS, params.get("folder", [""])[0], params.get("q", [""])[0]
@@ -170,9 +187,17 @@ class Handler(SimpleHTTPRequestHandler):
                     data = (stream.read(32769) if path.suffix.lower() in universe.TEXT_EXTENSIONS else b"")
                     return self.reply(200, {"text": data[:32768].decode("utf-8-sig", errors="replace"),
                                             "truncated": len(data) > 32768})
+                inline = params.get("preview") == ["inline"]
+                if inline:
+                    media = document_disk.inline_type(path.suffix.lower(), stream.read(16))
+                    if media is None:
+                        return self.reply(415, {"error": "Этот формат нельзя показать в браузере."})
+                    stream.seek(0)
+                else:
+                    media = "application/octet-stream"
                 self.send_response(200)
-                self.send_header("Content-Type", "application/octet-stream")
-                self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + quote(path.name, safe=""))
+                self.send_header("Content-Type", media)
+                self.send_header("Content-Disposition", ("inline" if inline else "attachment") + "; filename*=UTF-8''" + quote(path.name, safe=""))
                 self.send_header("Content-Length", str(os.fstat(stream.fileno()).st_size))
                 self.send_header("X-Content-Type-Options", "nosniff")
                 self.send_header("Cache-Control", "no-store")
@@ -219,8 +244,16 @@ class Handler(SimpleHTTPRequestHandler):
                 if url.path == WORK:
                     with connect() as db:
                         db.execute("BEGIN IMMEDIATE")
-                        record = workplace.save(db, data)
-                    return self.reply(200, {"id": record})
+                        if data.get("kind") == "schedule":
+                            result = workplace.schedule(db, data)
+                        elif data.get("kind") == "fuel-bind-card":
+                            result = workplace.bind_card(db, data)
+                        elif data.get("kind") == "measurement":
+                            workplace.measure(db, data)
+                            result = {"ok": True}
+                        else:
+                            result = {"id": workplace.save(db, data)}
+                    return self.reply(200, result)
                 if data.get("action") == "mkdir":
                     document_disk.folder_create(DOCUMENTS, data.get("folder", ""), data.get("name"))
                     return self.reply(201, {"ok": True})
@@ -244,7 +277,7 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         url = urlsplit(self.path)
-        if url.path in (DISK, FILE, WORK):
+        if url.path in (DISK, FILE, WORK, WORK_EXPORT):
             return self.get_workspace(url)
         if url.path in (MAP_CHAT, CHAT_FOLDERS):
             if self.headers.get("Host") != f"127.0.0.1:{self.server.server_port}":

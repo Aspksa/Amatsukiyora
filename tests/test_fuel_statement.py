@@ -40,7 +40,12 @@ class FuelStatementTest(unittest.TestCase):
         self.assertEqual(len({row[0] for row in records}), 3)
         with server.connect() as db:
             self.assertEqual(workplace.import_statement(db, records, "выписка.xls")["added"], 3)
-            self.assertEqual(workplace.import_statement(db, records, "копия.xls")["duplicates"], 3)
+            repeat = workplace.import_statement(db, records, "копия.xls")
+            self.assertEqual(repeat["duplicates"], 3)
+            linked = workplace.read(db, "2026-11", repeat["run"])
+            self.assertEqual(len(linked["runFuel"]), 3)
+            self.assertEqual(linked["runs"][0]["returns"], 1)
+            self.assertEqual(linked["runs"][0]["unassigned"], 3)
             self.assertTrue(all(row["vehicle"] is None for row in workplace.read(db, "2026-10")["fuel"]))
             vehicle = workplace.save(db, {"kind": "vehicle", "make": "ГАЗ", "model": "Next", "summer": 13, "winter": 15})
             workplace.save(db, {"kind": "employee", "name": "Тестовый водитель", "cards": ["000046"], "vehicles": [vehicle]})

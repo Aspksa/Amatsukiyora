@@ -113,3 +113,17 @@ def upload(root, folder, title, stream, length):
         finally:
             temp.close()
             temporary.unlink(missing_ok=True)
+
+
+def inline_type(suffix, prefix):
+    if suffix == ".pdf" and prefix.startswith(b"%PDF-"):
+        return "application/pdf"
+    if suffix == ".png" and prefix.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if suffix in (".jpg", ".jpeg") and prefix.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if suffix == ".gif" and prefix.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif"
+    if suffix == ".webp" and prefix.startswith(b"RIFF") and prefix[8:12] == b"WEBP":
+        return "image/webp"
+    return None

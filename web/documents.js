@@ -9,7 +9,10 @@ const sort = /** @type {HTMLSelectElement} */ (get('sort'));
 const input = /** @type {HTMLInputElement} */ (get('file-input'));
 const folderDialog = /** @type {HTMLDialogElement} */ (get('folder-dialog'));
 const folderForm = /** @type {HTMLFormElement} */ (get('folder-form'));
-const fileDialog = /** @type {HTMLDialogElement} */ (get('file-dialog'));
+const fileDialog = get('file-dialog');
+const picture = /** @type {HTMLImageElement} */ (get('file-image'));
+const pdf = /** @type {HTMLIFrameElement} */ (get('file-pdf'));
+/** @type {HTMLElement|null} */ let previewTrigger = null;
 const download = /** @type {HTMLAnchorElement} */ (get('download'));
 const updated = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium', timeStyle: 'short' });
 const collator = new Intl.Collator('ru-RU', { numeric: true, sensitivity: 'base' });
@@ -33,6 +36,7 @@ function sizeText(bytes) {
 /** @param {string} next */
 function navigate(next) {
   window.clearTimeout(searchTimer);
+  closePreview(false);
   folder = next;
   search.value = '';
   history.pushState(null, '', next ? '?' + new URLSearchParams({ folder: next }) : location.pathname);
@@ -56,10 +60,22 @@ function breadcrumbs() {
   });
 }
 
-/** @param {FileRow} item */
-async function openFile(item) {
+/** @param {boolean} [focus] */
+function closePreview(focus = true) {
+  previewVersion++;
+  fileDialog.hidden = true;
+  picture.removeAttribute('src');
+  pdf.removeAttribute('src');
+  if (focus && previewTrigger?.isConnected) previewTrigger.focus();
+}
+get('close-file-preview').addEventListener('click', () => closePreview());
+
+/** @param {FileRow} item @param {HTMLElement} trigger */
+async function openFile(item, trigger) {
   if (item.folder) return navigate(item.path);
-  const token = ++previewVersion;
+  closePreview(false);
+  previewTrigger = trigger;
+  const token = previewVersion;
   get('file-title').textContent = item.name;
   get('file-meta').textContent = sizeText(item.size) + ' · ' + updated.format(new Date(item.modified * 1000));
   const preview = get('file-preview');
@@ -70,10 +86,31 @@ async function openFile(item) {
   const url = '/api/disk/file?' + new URLSearchParams({ path: item.path });
   download.href = url;
   download.download = item.name;
-  fileDialog.showModal();
+  picture.hidden = pdf.hidden = true;
+  fileDialog.hidden = false;
+  get('close-file-preview').focus({ preventScroll: true });
+  if (matchMedia('(max-width: 1040px)').matches) fileDialog.scrollIntoView({ block: 'nearest' });
+  if (/\.pdf$/i.test(item.name)) {
+    pdf.src = url + '&preview=inline';
+    pdf.hidden = false;
+    notice.textContent = '';
+    return;
+  }
+  if (/\.(png|jpe?g|gif|webp)$/i.test(item.name)) {
+    picture.alt = item.name;
+    picture.onerror = () => {
+      if (token !== previewVersion) return;
+      picture.hidden = true;
+      notice.textContent = 'Не удалось открыть изображение.';
+    };
+    picture.src = url + '&preview=inline';
+    picture.hidden = false;
+    notice.textContent = '';
+    return;
+  }
   try {
     const data = await request(url + '&preview=1');
-    if (token !== previewVersion || !fileDialog.open) return;
+    if (token !== previewVersion || fileDialog.hidden) return;
     preview.textContent = data.text;
     preview.hidden = !data.text;
     notice.textContent = data.truncated ? 'Показана начальная часть файла.' : data.text ? '' : 'Для просмотра откройте скачанный файл.';
@@ -91,7 +128,7 @@ function fileButton(item) {
   icon.setAttribute('aria-hidden', 'true');
   button.append(icon, el('span', item.name));
   button.setAttribute('aria-label', 'Открыть ' + (item.folder ? 'папку ' : 'файл ') + item.name);
-  button.addEventListener('click', () => { void openFile(item); });
+  button.addEventListener('click', () => { void openFile(item, button); });
   return button;
 }
 
@@ -151,6 +188,7 @@ async function load(message = '') {
 }
 
 window.addEventListener('popstate', () => {
+  closePreview(false);
   folder = new URLSearchParams(location.search).get('folder') || '';
   search.value = '';
   void load();

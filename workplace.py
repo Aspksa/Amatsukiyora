@@ -1,9 +1,12 @@
 """SQLite registers for personnel, fleet, timesheets and fuel and lubricants."""
 import math
 import re
-from datetime import date
+from datetime import date, timedelta
 
-STATUSES = ("Работа", "Выходной", "Отпуск", "Больничный", "Отсутствие")
+import work_reports
+
+STATUSES = ("Работа", "Работа в выходной", "Выходной", "Отпуск", "Больничный", "Отсутствие")
+WORK_DAYS = ('Работа', 'Работа в выходной')
 UNITS = ("л", "кг")
 
 
@@ -43,10 +46,34 @@ def init(db):
         );
         CREATE INDEX IF NOT EXISTS work_fuel_statement_day ON work_fuel_statement(day);
         CREATE INDEX IF NOT EXISTS work_fuel_statement_card ON work_fuel_statement(card);
+        CREATE TABLE IF NOT EXISTS work_fuel_import_runs (
+            id INTEGER PRIMARY KEY, filename TEXT NOT NULL, created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            first_day TEXT NOT NULL, last_day TEXT NOT NULL, added INTEGER NOT NULL, duplicates INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS work_fuel_import_members (
+            run INTEGER NOT NULL REFERENCES work_fuel_import_runs(id),
+            operation INTEGER NOT NULL REFERENCES work_fuel_statement(id), PRIMARY KEY(run,operation)
+        );
+        CREATE INDEX IF NOT EXISTS work_fuel_member_operation ON work_fuel_import_members(operation);
+        CREATE TABLE IF NOT EXISTS work_fuel_measurements (
+            vehicle INTEGER NOT NULL REFERENCES work_vehicles(id), month TEXT NOT NULL,
+            km REAL NOT NULL, diesel REAL NOT NULL, petrol REAL NOT NULL, season TEXT NOT NULL, norm REAL NOT NULL,
+            PRIMARY KEY(vehicle,month)
+        );
         CREATE TABLE IF NOT EXISTS work_fuel_card_vehicle (
             card TEXT PRIMARY KEY, vehicle INTEGER NOT NULL REFERENCES work_vehicles(id)
         );
     """)
+    legacy = db.execute("""SELECT s.filename, MIN(s.day), MAX(s.day), COUNT(*)
+        FROM work_fuel_statement s WHERE NOT EXISTS (
+            SELECT 1 FROM work_fuel_import_members m WHERE m.operation=s.id)
+        GROUP BY s.filename""").fetchall()
+    for filename, first, last, count in legacy:
+        run = db.execute("""INSERT INTO work_fuel_import_runs(filename,first_day,last_day,added,duplicates,created)
+            VALUES (?,?,?,?,0,'')""", (filename,first,last,count)).lastrowid
+        db.execute("""INSERT INTO work_fuel_import_members(run,operation)
+            SELECT ?,s.id FROM work_fuel_statement s WHERE s.filename=? AND NOT EXISTS (
+                SELECT 1 FROM work_fuel_import_members m WHERE m.operation=s.id)""", (run,filename))
 
 
 def rows(db, query, *parameters):
@@ -55,23 +82,86 @@ def rows(db, query, *parameters):
     return [dict(zip(keys, row)) for row in cursor]
 
 
-def read(db, month):
-    if not re.fullmatch(r"\d{4}-\d{2}", month):
+FUEL_ROWS = """SELECT id,vehicle,day,material,unit,quantity,price,card,
+    ROUND(quantity*price,2) AS amount,'' AS operation,'' AS hour,'' AS station,'' AS filename, 0 AS imported
+    FROM work_fuel WHERE {manual}
+    UNION ALL SELECT id,vehicle,day,material,'л',quantity,price,card,
+    amount_cents/100.0,operation,hour,station,filename,1
+    FROM work_fuel_statement WHERE {statement} ORDER BY day DESC,hour DESC,id DESC"""
+
+
+def validate_month(month):
+    if not isinstance(month, str) or not re.fullmatch(r"\d{4}-\d{2}", month):
         raise ValueError("Укажите месяц.")
     date.fromisoformat(month + "-01")
-    return {
+    return month
+
+
+def read(db, month, run=None):
+    month = validate_month(month)
+    data = {
         "employees": rows(db, "SELECT id,name,position FROM work_employees ORDER BY name,id"),
         "cards": rows(db, "SELECT number,employee FROM work_cards ORDER BY number"),
         "vehicles": rows(db, "SELECT id,make,model,plate,driver,summer,winter FROM work_vehicles ORDER BY make,model,id"),
         "timesheet": rows(db, "SELECT id,employee,day,status,hours FROM work_timesheet WHERE day LIKE ? ORDER BY day DESC,id DESC", month + "-%"),
-        "fuel": rows(db, """SELECT id,vehicle,day,material,unit,quantity,price,card,
-            ROUND(quantity*price,2) AS amount,'' AS operation,'' AS hour,'' AS station,'' AS filename, 0 AS imported
-            FROM work_fuel WHERE day LIKE ?
-            UNION ALL SELECT id,vehicle,day,material,'л',quantity,price,card,
-            amount_cents/100.0,operation,hour,station,filename,1
-            FROM work_fuel_statement WHERE day LIKE ? ORDER BY day DESC,hour DESC,id DESC""", month + "-%", month + "-%"),
+        "fuel": rows(db, FUEL_ROWS.format(manual="day LIKE ?", statement="day LIKE ?"), month + "-%", month + "-%"),
         "cardVehicles": rows(db, "SELECT card,vehicle FROM work_fuel_card_vehicle ORDER BY card"),
+        "measurements": rows(db, "SELECT vehicle,km,diesel,petrol,season,norm FROM work_fuel_measurements WHERE month=?", month),
+        "runs": rows(db, """SELECT r.*, COUNT(CASE WHEN s.operation='Возврат' THEN 1 END) AS returns,
+            COUNT(CASE WHEN s.id IS NOT NULL AND s.vehicle IS NULL THEN 1 END) AS unassigned
+            FROM work_fuel_import_runs r LEFT JOIN work_fuel_import_members m ON m.run=r.id
+            LEFT JOIN work_fuel_statement s ON s.id=m.operation GROUP BY r.id ORDER BY r.id DESC"""),
     }
+    data["fleet"] = work_reports.fleet(data)
+    if run is not None:
+        data["runFuel"] = rows(db, FUEL_ROWS.format(manual="0", statement=
+            "id IN(SELECT operation FROM work_fuel_import_members WHERE run=?)"), ident(run))
+    return data
+
+
+def recent_fuel(db, vehicle):
+    return rows(db, FUEL_ROWS.format(manual="vehicle=?", statement="vehicle=?") + " LIMIT 6",
+                ident(vehicle), vehicle)
+
+
+def schedule(db, data):
+    start, end = (date.fromisoformat(day(data.get(key))) for key in ("start", "end"))
+    days = (end-start).days + 1
+    if not 1 <= days <= 7:
+        raise ValueError("Выберите от одного до семи дней.")
+    hours = numeric(data.get("hours"), .01, 24, "Часы")
+    employee_id = ident(data.get("employee"))
+    added = 0
+    skipped = 0
+    for offset in range(days):
+        current = start + timedelta(days=offset)
+        weekend = current.weekday() >= 5
+        if weekend and data.get("weekends") is not True:
+            continue
+        code = "Работа в выходной" if weekend else "Работа"
+        cursor = db.execute("""INSERT INTO work_timesheet(employee,day,status,hours)
+            VALUES (?,?,?,?) ON CONFLICT(employee,day) DO NOTHING""", (employee_id,current.isoformat(),code,hours))
+        added += cursor.rowcount
+        skipped += not cursor.rowcount
+    return {"added": added, "skipped": skipped}
+
+
+def measure(db, data):
+    month = validate_month(data.get("month"))
+    vehicle = ident(data.get("vehicle"))
+    km = numeric(data.get("km"), 0, 1_000_000, "Пробег")
+    diesel = numeric(data.get("diesel"), 0, 1_000_000, "Фактический расход ДТ")
+    petrol = numeric(data.get("petrol"), 0, 1_000_000, "Фактический расход бензина")
+    season = data.get("season")
+    if season not in ("Лето", "Зима"):
+        raise ValueError("Выберите сезон.")
+    car = db.execute("SELECT summer,winter FROM work_vehicles WHERE id=?", (vehicle,)).fetchone()
+    if car is None:
+        raise ValueError("Автомобиль не найден.")
+    db.execute("""INSERT INTO work_fuel_measurements(vehicle,month,km,diesel,petrol,season,norm)
+        VALUES (?,?,?,?,?,?,?) ON CONFLICT(vehicle,month) DO UPDATE SET km=excluded.km,diesel=excluded.diesel,
+        petrol=excluded.petrol,season=excluded.season,norm=excluded.norm""",
+        (vehicle,month,km,diesel,petrol,season,car[0 if season == "Лето" else 1]))
 
 
 def text(value, limit, label, optional=False):
@@ -130,7 +220,10 @@ def bind_card(db, data):
     else:
         db.execute("""INSERT INTO work_fuel_card_vehicle(card,vehicle) VALUES (?,?)
             ON CONFLICT(card) DO UPDATE SET vehicle=excluded.vehicle""", (card, vehicle))
+    missing = "SELECT COUNT(*) FROM work_fuel_statement WHERE card=? AND vehicle IS NULL"
+    before = db.execute(missing, (card,)).fetchone()[0]
     reconcile_statement(db)
+    return {"attached": before - db.execute(missing, (card,)).fetchone()[0]}
 
 
 def import_statement(db, records, filename):
@@ -141,8 +234,13 @@ def import_statement(db, records, filename):
         ((*record, filename) for record in records))
     added = db.total_changes - before
     reconcile_statement(db)
-    months = sorted({record[2][:7] for record in records}, reverse=True)
-    return {"added": added, "duplicates": len(records) - added, "months": months}
+    dates = sorted({record[2] for record in records})
+    run = db.execute("""INSERT INTO work_fuel_import_runs(filename,first_day,last_day,added,duplicates)
+        VALUES (?,?,?,?,?)""", (filename,dates[0],dates[-1],added,len(records)-added)).lastrowid
+    db.executemany("""INSERT INTO work_fuel_import_members(run,operation)
+        SELECT ?,id FROM work_fuel_statement WHERE fingerprint=?""", ((run,record[0]) for record in records))
+    months = sorted({value[:7] for value in dates}, reverse=True)
+    return {"added": added, "duplicates": len(records) - added, "months": months, "run": run}
 
 
 def employee(db, data, record_id):
@@ -177,8 +275,7 @@ def save(db, data):
     if kind == "employee":
         return employee(db, data, record_id)
     if kind == "fuel-bind-card":
-        bind_card(db, data)
-        return None
+        return bind_card(db, data)
     if kind == "vehicle":
         make = text(data.get("make"), 80, "Марка")
         model = text(data.get("model"), 80, "Модель")
@@ -196,7 +293,7 @@ def save(db, data):
         if status not in STATUSES:
             raise ValueError("Выберите статус дня.")
         hours = numeric(data.get("hours"), 0, 24, "Часы")
-        if status != "Работа" and hours:
+        if status not in WORK_DAYS and hours:
             raise ValueError("Для нерабочего дня часы должны равняться нулю.")
         values = (ident(data.get("employee")), day(data.get("day")), status, hours)
         if record_id is None:

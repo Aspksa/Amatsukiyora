@@ -41,7 +41,18 @@
       <span id="file-count"></span>
     </div>
     <p id="file-status" class="status" role="status"></p>
-    <section aria-label="Файлы и папки" id="file-results"></section>
+    <div class="detail-layout">
+      <section aria-label="Файлы и папки" id="file-results"></section>
+      <aside id="file-dialog" class="detail-panel" aria-labelledby="file-title" hidden>
+        <header class="dialog-heading"><h2 id="file-title"></h2><button type="button" id="close-file-preview" class="close-dialog" aria-label="Закрыть предпросмотр">×</button></header>
+        <p class="file-meta" id="file-meta"></p>
+        <img id="file-image" hidden alt="">
+        <iframe id="file-pdf" title="Предпросмотр PDF" hidden></iframe>
+        <pre id="file-preview" hidden tabindex="0"></pre>
+        <p id="file-preview-status" class="status" role="status"></p>
+        <a class="button primary" id="download">Скачать файл</a>
+      </aside>
+    </div>
   </main>
   <dialog id="folder-dialog" aria-labelledby="folder-title">
     <form id="folder-form" class="dialog-body">
@@ -50,15 +61,6 @@
       <p class="status error" id="folder-error" role="status"></p>
       <button class="button primary" type="submit">Создать</button>
     </form>
-  </dialog>
-  <dialog id="file-dialog" aria-labelledby="file-title">
-    <div class="dialog-body">
-      <header class="dialog-heading"><h2 id="file-title"></h2><button type="button" class="close-dialog" aria-label="Закрыть">×</button></header>
-      <p class="file-meta" id="file-meta"></p>
-      <pre id="file-preview" hidden tabindex="0"></pre>
-      <p id="file-preview-status" class="status" role="status"></p>
-      <a class="button primary" id="download">Скачать файл</a>
-    </div>
   </dialog>
   <script type="module" src="documents.js"></script>
 </body>
